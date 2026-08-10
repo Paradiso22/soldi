@@ -1,0 +1,7 @@
+# Dati personali: mai nel repo pubblico
+seed/
+PRODUCT.md
+
+# Ambiente locale
+.claude/
+*.soldi
