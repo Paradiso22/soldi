@@ -1,7 +1,7 @@
-/* sw.js — offline first */
+/* sw.js - offline first */
 'use strict';
 
-const VERSION = 'soldi-v3';
+const VERSION = 'soldi-v4';
 const ASSETS = [
   './',
   'index.html',

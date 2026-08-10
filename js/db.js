@@ -1,4 +1,4 @@
-/* db.js — IndexedDB, modello dati, calcoli */
+/* db.js - IndexedDB, modello dati, calcoli */
 'use strict';
 
 const DB = (() => {
@@ -164,7 +164,7 @@ const DB = (() => {
 
   /* ---------- fisco (regime forfettario) ---------- */
   // replica la matematica del foglio: rivalsa = 4% del lordo,
-  // imponibile = (lordo − bollo) × coefficiente, netto = lordo − (imposta + inps)
+  // imponibile = (lordo - bollo) × coefficiente, netto = lordo - (imposta + inps)
   function invoiceCalc(t, s = state.settings) {
     const lordo = t.amount;
     const inv = t.invoice || {};

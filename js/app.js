@@ -1,10 +1,10 @@
-/* app.js — Soldi, la lavagna. Router, viste, dialog. */
+/* app.js - Soldi, la lavagna. Router, viste, dialog. */
 'use strict';
 
 /* ---------- helpers ---------- */
 const EUR = new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' });
-const fmt = c => EUR.format(c / 100).replace('-', '−');
-const fmtS = c => (c > 0 ? '+' : c < 0 ? '−' : '') + EUR.format(Math.abs(c) / 100);
+const fmt = c => EUR.format(c / 100);
+const fmtS = c => (c > 0 ? '+' : c < 0 ? '-' : '') + EUR.format(Math.abs(c) / 100);
 const MESI = ['Gennaio', 'Febbraio', 'Marzo', 'Aprile', 'Maggio', 'Giugno', 'Luglio', 'Agosto', 'Settembre', 'Ottobre', 'Novembre', 'Dicembre'];
 const MESI_S = ['Gen', 'Feb', 'Mar', 'Apr', 'Mag', 'Giu', 'Lug', 'Ago', 'Set', 'Ott', 'Nov', 'Dic'];
 const esc = s => String(s ?? '').replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m]));
@@ -201,7 +201,7 @@ const Views = {
       </button>
 
       ${noCat ? `<button class="badge warn" id="fix-nocat" style="margin-top:12px;cursor:pointer;font-family:inherit">
-        <svg class="ic" style="width:14px;height:14px"><use href="#i-alert"/></svg> ${noCat} movimenti senza categoria — sistemali</button>` : ''}
+        <svg class="ic" style="width:14px;height:14px"><use href="#i-alert"/></svg> ${noCat} movimenti senza categoria - sistemali</button>` : ''}
       </div><div class="colB">
 
       <h3 class="rule">Ultimi movimenti</h3>
@@ -240,7 +240,7 @@ const Views = {
   txRow(t, { noDate } = {}) {
     const c = DB.cat(t.category);
     const a = DB.acc(t.account), b = DB.acc(t.toAccount);
-    const sign = t.type === 'in' ? '+' : t.type === 'out' ? '−' : '';
+    const sign = t.type === 'in' ? '+' : t.type === 'out' ? '-' : '';
     const cls = t.type === 'in' ? 'pos' : t.type === 'out' ? 'neg' : 'mut';
     const icon = t.type === 'transfer' ? '🔁' : (c ? c.icon : '❓');
     const where = t.type === 'transfer'
@@ -290,7 +290,7 @@ const Views = {
     return `
       <h2 class="viewtitle">Movimenti</h2>
       <div class="subtitle">${list.length} moviment${list.length === 1 ? 'o' : 'i'} ·
-        <span class="pos money">+${fmt(tin)}</span> · <span class="neg money">−${fmt(tout)}</span></div>
+        <span class="pos money">+${fmt(tin)}</span> · <span class="neg money">-${fmt(tout)}</span></div>
 
       <div class="periodnav">
         <button class="iconbtn" id="m-prev" aria-label="Mese precedente" ${f.ym ? '' : 'disabled'}><svg class="ic"><use href="#i-left"/></svg></button>
@@ -391,8 +391,8 @@ const Views = {
             <td class="money pos">${fmt(c.netto)}</td>
             <td class="money">${fmt(c.imposta)}</td>
             <td class="money">${fmt(c.inps)}</td>
-            <td class="money hm">${c.bollo ? fmt(c.bollo) : '—'}</td>
-            <td class="money hm">${c.rivalsaAmt ? fmt(c.rivalsaAmt) : '—'}</td>
+            <td class="money hm">${c.bollo ? fmt(c.bollo) : '-'}</td>
+            <td class="money hm">${c.rivalsaAmt ? fmt(c.rivalsaAmt) : '-'}</td>
           </tr>`).join('')}
         </tbody>
         <tfoot><tr><td>Totale ${y}</td>
@@ -414,7 +414,7 @@ const Views = {
         </tr>`).join('')}</tbody>
       </table></div>`}
 
-      <p class="mut" style="font-size:.78rem;margin-top:14px">I calcoli replicano il tuo foglio: accantonamento = imposta + INPS sull'imponibile (lordo − bollo) × coefficiente. Percentuali modificabili nelle <a href="#/impostazioni" style="color:var(--chalk-2)">impostazioni</a> — verificale col commercialista.</p>`;
+      <p class="mut" style="font-size:.78rem;margin-top:14px">I calcoli replicano il tuo foglio: accantonamento = imposta + INPS sull'imponibile (lordo - bollo) × coefficiente. Percentuali modificabili nelle <a href="#/impostazioni" style="color:var(--chalk-2)">impostazioni</a> - verificale col commercialista.</p>`;
   },
   bindFatture(root) {
     $('#f-prev', root).addEventListener('click', () => { UI.fatYear--; render(); });
@@ -567,7 +567,7 @@ const Views = {
 
       <div class="setcard">
         <h4>Fisco (forfettario)</h4>
-        <div class="s-desc">Parametri per il calcolo delle fatture. Verificali col commercialista — l'INPS Gestione Separata 2026 per chi non ha altra cassa è circa 26,07%.</div>
+        <div class="s-desc">Parametri per il calcolo delle fatture. Verificali col commercialista - l'INPS Gestione Separata 2026 per chi non ha altra cassa è circa 26,07%.</div>
         <form id="fisco-form">
           <div class="frow">
             <div class="field"><label for="fx-imposta">Imposta sostitutiva %</label><input id="fx-imposta" type="number" step="0.01" min="0" max="100" value="${(s.imposta * 100).toFixed(2).replace(/\.?0+$/, '')}"></div>
@@ -702,7 +702,7 @@ const Dialogs = {
           <div class="field"><label for="t-acc" id="lbl-acc">${t.type === 'transfer' ? 'Dal conto' : 'Conto'}</label>
             <select id="t-acc"><option value="">${t.type === 'transfer' ? 'Origine sconosciuta' : 'Senza conto'}</option>${accOpts(t.account)}</select></div>
           <div class="field" id="wrap-toacc" ${t.type === 'transfer' ? '' : 'hidden'}><label for="t-toacc">Al conto</label>
-            <select id="t-toacc"><option value="">—</option>${accOpts(t.toAccount)}</select></div>
+            <select id="t-toacc"><option value="">-</option>${accOpts(t.toAccount)}</select></div>
         </div>
         <div id="wrap-invoice" ${t.type === 'in' ? '' : 'hidden'}>
           <div class="field"><label style="display:flex;align-items:center;gap:8px;font-size:.9rem;cursor:pointer">
@@ -792,7 +792,7 @@ const Dialogs = {
       <div class="dlg-head"><h2>Ho capito così</h2><button class="iconbtn dlg-close" aria-label="Chiudi"><svg class="ic"><use href="#i-x"/></svg></button></div>
       <div class="dlg-body">
         <div class="preview-card" style="width:100%">
-          <div class="p-amt money ${p.type === 'in' ? 'pos' : 'neg'}">${p.type === 'in' ? '+' : '−'} ${fmt(p.amount)}</div>
+          <div class="p-amt money ${p.type === 'in' ? 'pos' : 'neg'}">${p.type === 'in' ? '+' : '-'} ${fmt(p.amount)}</div>
           <div style="font-weight:700;margin-top:2px">${esc(p.desc)}</div>
           <div class="p-meta">
             <span class="badge">${fmtDate(p.date)}</span>

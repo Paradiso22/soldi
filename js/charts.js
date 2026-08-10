@@ -1,4 +1,4 @@
-/* charts.js — donut categoria + barre mensili, SVG puro. */
+/* charts.js - donut categoria + barre mensili, SVG puro. */
 'use strict';
 
 const Charts = (() => {
@@ -118,7 +118,7 @@ const Charts = (() => {
         // hit target più grande della barra
         const hit = el('rect', { x: cxx + dx - slot / 4.2, y: padT, width: slot / 2.1, height: plotH, fill: 'transparent' });
         hit.style.cursor = onBarClick ? 'pointer' : 'default';
-        hit.addEventListener('pointermove', e => showTip(e, d.label + ' — ' + name, fmt(val)));
+        hit.addEventListener('pointermove', e => showTip(e, d.label + ' - ' + name, fmt(val)));
         hit.addEventListener('pointerleave', hideTip);
         if (onBarClick) hit.addEventListener('click', () => onBarClick(i));
         svg.appendChild(rect); svg.appendChild(hit);

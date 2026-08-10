@@ -1,4 +1,4 @@
-/* parser.js — "12 pizza contanti" → movimento. Tutto locale, zero rete. */
+/* parser.js - "12 pizza contanti" → movimento. Tutto locale, zero rete. */
 'use strict';
 
 const Parser = (() => {

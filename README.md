@@ -14,7 +14,7 @@ poi apri http://localhost:8741 (serve un piccolo server: aprire il file direttam
 
 L'installazione su Android richiede HTTPS, quindi serve un hosting statico gratuito:
 
-1. **GitHub Pages** — crea un repo, carica questi file, attiva Pages. *(il file `seed/seed-data.json` e `PRODUCT.md` sono esclusi dal repo via `.gitignore` perché contengono dati personali — la versione online parte vuota e i dati li porti col backup cifrato, vedi sotto)*
+1. **GitHub Pages** - crea un repo, carica questi file, attiva Pages. *(il file `seed/seed-data.json` e `PRODUCT.md` sono esclusi dal repo via `.gitignore` perché contengono dati personali - la versione online parte vuota e i dati li porti col backup cifrato, vedi sotto)*
 2. Apri l'URL dal telefono con Chrome → menu ⋮ → **"Aggiungi a schermata Home" / "Installa app"**. Grazie al manifest si installa come app vera, funziona anche offline.
 
 ### Portare i dati sul telefono (senza mai metterli online)
@@ -27,17 +27,17 @@ L'installazione su Android richiede HTTPS, quindi serve un hosting statico gratu
 ## Foto scontrini (opzionale, gratis)
 
 Impostazioni → Riconoscimento foto: incolla una API key gratuita di Google Gemini
-(https://aistudio.google.com/apikey — piano free, non serve carta). La chiave resta sul dispositivo; le foto vengono inviate a Google solo quando usi la funzione.
+(https://aistudio.google.com/apikey - piano free, non serve carta). La chiave resta sul dispositivo; le foto vengono inviate a Google solo quando usi la funzione.
 
 ## Struttura
 
-- `index.html`, `css/app.css` — interfaccia (design "giocoso italiano")
-- `js/db.js` — dati (IndexedDB) + matematica fiscale forfettario
-- `js/parser.js` — parser italiano per l'inserimento rapido + integrazione Gemini
-- `js/charts.js` — grafici SVG (palette validata per daltonismo)
-- `js/backup.js` — backup cifrato + export CSV
-- `sw.js`, `manifest.webmanifest`, `icons/` — PWA offline e installabile
-- `seed/seed-data.json` — i 1.036 movimenti importati dal foglio Google (**solo locale, mai nel repo**)
+- `index.html`, `css/app.css` - interfaccia (design "giocoso italiano")
+- `js/db.js` - dati (IndexedDB) + matematica fiscale forfettario
+- `js/parser.js` - parser italiano per l'inserimento rapido + integrazione Gemini
+- `js/charts.js` - grafici SVG (palette validata per daltonismo)
+- `js/backup.js` - backup cifrato + export CSV
+- `sw.js`, `manifest.webmanifest`, `icons/` - PWA offline e installabile
+- `seed/seed-data.json` - i 1.036 movimenti importati dal foglio Google (**solo locale, mai nel repo**)
 
 ## Parametri fiscali
 

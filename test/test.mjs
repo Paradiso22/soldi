@@ -1,4 +1,4 @@
-// test.mjs — self-check: matematica fiscale vs foglio Google + parser. Esegui: node test/test.mjs
+// test.mjs - self-check: matematica fiscale vs foglio Google + parser. Esegui: node test/test.mjs
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -62,4 +62,4 @@ assert.equal(p.date.slice(5), '08-05'); // giorno giusto, niente slittamenti UTC
 p = Parser.parse('senza importo qui', env);
 assert.ok(p.error);
 
-console.log('OK — fisco e parser combaciano col foglio');
+console.log('OK - fisco e parser combaciano col foglio');

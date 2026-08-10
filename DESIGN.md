@@ -1,6 +1,6 @@
 ---
 name: Soldi
-description: I tuoi soldi con la faccia amichevole delle app italiane quotidiane — chiara, tonda, colorata, diretta.
+description: I tuoi soldi con la faccia amichevole delle app italiane quotidiane - chiara, tonda, colorata, diretta.
 colors:
   bg: "#f6f4f0"
   card: "#ffffff"
@@ -36,10 +36,10 @@ colors:
   grid: "#efece6"
 ---
 
-# DESIGN.md — Soldi
+# DESIGN.md - Soldi
 
 Mondo scelto dall'utente (agosto 2026, sostituisce il mondo "lavagna"): **giocoso
-italiano** — canone delle app di pagamento italiane quotidiane, livello di craft
+italiano** - canone delle app di pagamento italiane quotidiane, livello di craft
 Satispay/Hype senza copiarne il brand. Tema unico chiaro.
 
 ## Palette
@@ -57,14 +57,14 @@ l'accantonamento fiscale**: card "da mettere da parte" in `--sun-soft` con testo
 bianca); le 8 categorie con più uscite di sempre possiedono uno slot fisso
 (`catColorSlots()` in js/app.js), il resto confluisce in "Altro" grigio. Le
 barre usano sempre `--s3` (verde-acqua) per le Entrate e `--s2` (arancio) per le
-Uscite — coppia adiacente validata che conserva la semantica verde/rosso. I
+Uscite - coppia adiacente validata che conserva la semantica verde/rosso. I
 dischi delle categorie nelle liste riusano lo slot al 16% via `color-mix`
 (`catDisc()`).
 
 ## Tipografia
 
 Due voci: **Baloo 2** (400–800, `--display`) per titoli, numeri eroe, etichette
-periodo e testate dialog — la rotondità è la voce del mondo; **Nunito**
+periodo e testate dialog - la rotondità è la voce del mondo; **Nunito**
 (variabile, `--sans`) per tutto il resto, peso base 600, UI 700–900. Ogni
 importo porta `tabular-nums` e il vero meno U+2212 (`fmt()` in js/app.js).
 Scala osservata: 0.62–0.95rem UI, 1.02–1.75rem titoli, `clamp(2.6rem, 11vw,
@@ -75,13 +75,13 @@ Scala osservata: 0.62–0.95rem UI, 1.02–1.75rem titoli, `clamp(2.6rem, 11vw,
 **Pillole ovunque**: bottoni, chip, segment, quickbar, toast, voci sidenav sono
 `border-radius: 999px`. Superfici: card 18–20px, dialog 26px, tabbar 22px in
 alto, dischi/campi 12–16px, badge brand 11px. Ombre solo soffici e larghe
-(`--shadow`, `--shadow-up`); niente bordi duri — il chip usa un inset ring
+(`--shadow`, `--shadow-up`); niente bordi duri - il chip usa un inset ring
 1.5px `--line`, gli input un bordo 2px trasparente che diventa corallo al
 focus.
 
 ## Movimento
 
-**The Pop Rule**: il movimento nativo del mondo è il "pop" — easing
+**The Pop Rule**: il movimento nativo del mondo è il "pop" - easing
 `--ease-pop: cubic-bezier(.34,1.56,.64,1)` (overshoot deliberato, non slop):
 la riga nuova entra con `popin` (scale .92→1, .45s), FAB e card premono e
 sollevano con lo stesso easing. Tutto il resto è micro-transizione ≤250ms;

@@ -1,4 +1,4 @@
-/* backup.js — export/import cifrato (AES-GCM + PBKDF2) e CSV. Tutto in locale. */
+/* backup.js - export/import cifrato (AES-GCM + PBKDF2) e CSV. Tutto in locale. */
 'use strict';
 
 const Backup = (() => {
