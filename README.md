@@ -1,4 +1,4 @@
-# Soldi — La Lavagna
+# Soldi
 
 App personale di gestione soldi (PWA): spese, entrate, giroconti su più conti, fatture con calcolo automatico degli accantonamenti del regime forfettario, statistiche, inserimento rapido stile chat. Nessun server, nessun abbonamento: **i dati vivono solo sul tuo dispositivo** (IndexedDB), i backup sono file cifrati (AES-256-GCM) che salvi dove vuoi, ad esempio sul tuo Google Drive.
 
@@ -31,7 +31,7 @@ Impostazioni → Riconoscimento foto: incolla una API key gratuita di Google Gem
 
 ## Struttura
 
-- `index.html`, `css/app.css` — interfaccia (design "lavagna del mercato")
+- `index.html`, `css/app.css` — interfaccia (design "giocoso italiano")
 - `js/db.js` — dati (IndexedDB) + matematica fiscale forfettario
 - `js/parser.js` — parser italiano per l'inserimento rapido + integrazione Gemini
 - `js/charts.js` — grafici SVG (palette validata per daltonismo)

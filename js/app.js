@@ -90,6 +90,13 @@ function navigate() {
   render();
 }
 
+// slot colore per categoria, ricalcolati a ogni render (usati per dischi e donut)
+let CAT_SLOTS = new Map();
+function catDisc(catId) {
+  const slot = CAT_SLOTS.get(catId);
+  return slot != null ? `background: color-mix(in srgb, var(--s${slot + 1}) 16%, white)` : '';
+}
+
 function render() {
   Charts.hideTip();
   const view = $('#view');
@@ -99,6 +106,7 @@ function render() {
     if (isCur) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
   });
   if (needsWelcome) { view.innerHTML = Views.welcome(); Views.bindWelcome(view); return; }
+  CAT_SLOTS = catColorSlots();
   const v = Views[UI.route];
   view.innerHTML = v();
   const bind = Views['bind' + UI.route[0].toUpperCase() + UI.route.slice(1)];
@@ -112,8 +120,8 @@ const Views = {
   /* ===== benvenuto / prima esecuzione ===== */
   welcome() {
     return `<div class="welcome">
-      <h2><span style="color:var(--tag)">€</span> Soldi</h2>
-      <p>La tua lavagna dei conti: spese, entrate e fatture del forfettario, tutto salvato <strong>solo su questo dispositivo</strong>.</p>
+      <h2><span style="color:var(--brand)">€</span> Soldi</h2>
+      <p>Spese, entrate e fatture del forfettario, tutto salvato <strong>solo su questo dispositivo</strong>.</p>
       <button class="btn primary" id="w-import"><svg class="ic"><use href="#i-down"/></svg> Importa i movimenti dal foglio Google (1.036)</button>
       <button class="btn" id="w-file"><svg class="ic"><use href="#i-up"/></svg> Importa un backup (.soldi)</button>
       <button class="btn" id="w-empty">Parti da zero</button>
@@ -198,7 +206,7 @@ const Views = {
 
       <h3 class="rule">Ultimi movimenti</h3>
       <ul class="txlist">${recent.length ? recent.map(t => Views.txRow(t)).join('') : `
-        <li class="empty"><div class="e-marker">La lavagna è pulita</div>Scrivi la prima spesa qui sotto.</li>`}
+        <li class="empty"><div class="e-marker">Tutto in ordine</div>Scrivi la prima spesa qui sotto.</li>`}
       </ul>
 
       <form class="quickbar" id="quickform">
@@ -240,7 +248,7 @@ const Views = {
       : [c ? esc(c.name) : 'Senza categoria', a ? esc(a.name) : 'Senza conto'].join(' · ');
     const sub = (noDate ? [] : [fmtDate(t.date, t.dayUnknown)]).concat(where).join(' · ');
     return `<li><button class="txrow ${UI.lastAdded === t.id ? 'is-new' : ''}" data-id="${t.id}">
-      <span class="t-emoji" aria-hidden="true">${icon}</span>
+      <span class="t-emoji" aria-hidden="true" style="${catDisc(t.category)}">${icon}</span>
       <span class="t-main">
         <span class="t-desc">${esc(t.desc)}${t.invoice ? ' <span class="badge" style="font-size:.62rem;padding:1px 7px">FATTURA</span>' : ''}</span>
         <span class="t-sub">${sub}</span>
@@ -464,8 +472,8 @@ const Views = {
 
       <div class="chartcard">
         <h4>Entrate e uscite · ${y}</h4>
-        <div class="c-sub"><span class="swatch" style="display:inline-block;width:10px;height:10px;border-radius:3px;background:var(--s1)"></span> Entrate ${fmt(ytot.in)} &nbsp;
-          <span class="swatch" style="display:inline-block;width:10px;height:10px;border-radius:3px;background:var(--s2)"></span> Uscite ${fmt(ytot.out)} &nbsp;·&nbsp; saldo <strong class="money ${ytot.in - ytot.out >= 0 ? 'pos' : 'neg'}">${fmtS(ytot.in - ytot.out)}</strong></div>
+        <div class="c-sub"><span class="swatch" style="display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--s3)"></span> Entrate ${fmt(ytot.in)} &nbsp;
+          <span class="swatch" style="display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--s2)"></span> Uscite ${fmt(ytot.out)} &nbsp;·&nbsp; saldo <strong class="money ${ytot.in - ytot.out >= 0 ? 'pos' : 'neg'}">${fmtS(ytot.in - ytot.out)}</strong></div>
         <div id="barchart"></div>
       </div>
       </div>
@@ -744,7 +752,7 @@ const Dialogs = {
     if (!isNew) $('#t-del', dlg).addEventListener('click', () => {
       dlg.close();
       Dialogs.confirm('Eliminare il movimento?', `"${t.desc}" · ${fmt(t.amount)} verrà cancellato.`, 'Elimina', async () => {
-        await DB.deleteTx(t.id); toast('Cancellato dalla lavagna'); render();
+        await DB.deleteTx(t.id); toast('Eliminato'); render();
       });
     });
 
@@ -770,7 +778,7 @@ const Dialogs = {
       const saved = await DB.putTx(out);
       UI.lastAdded = saved.id;
       dlg.close();
-      toast(isNew ? 'Segnato sulla lavagna ✓' : 'Salvato ✓');
+      toast(isNew ? 'Segnato ✓' : 'Salvato ✓');
       render();
     });
 
@@ -806,7 +814,7 @@ const Dialogs = {
       UI.lastAdded = saved.id;
       dlg.close();
       if (onSaved) onSaved();
-      toast('Segnato sulla lavagna ✓');
+      toast('Segnato ✓');
       render();
     });
     $('#q-edit', dlg).addEventListener('click', () => {

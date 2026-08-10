@@ -124,7 +124,7 @@ const Charts = (() => {
         svg.appendChild(rect); svg.appendChild(hit);
       };
       if (d.in || d.out) {
-        mk(d.in, -barW * 0.62, 'var(--s1)', 'Entrate');
+        mk(d.in, -barW * 0.62, 'var(--s3)', 'Entrate');
         mk(d.out, barW * 0.62, 'var(--s2)', 'Uscite');
       }
       const lbl = el('text', { x: cxx, y: H - 8, 'text-anchor': 'middle', fill: 'var(--chalk-3)', 'font-size': '10.5', 'font-family': 'inherit' });

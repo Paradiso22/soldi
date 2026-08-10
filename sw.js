@@ -1,7 +1,7 @@
 /* sw.js — offline first */
 'use strict';
 
-const VERSION = 'soldi-v2';
+const VERSION = 'soldi-v3';
 const ASSETS = [
   './',
   'index.html',
@@ -11,8 +11,8 @@ const ASSETS = [
   'js/charts.js',
   'js/backup.js',
   'js/app.js',
-  'fonts/archivo-latin.woff2',
-  'fonts/marker-latin.woff2',
+  'fonts/baloo2-latin.woff2',
+  'fonts/nunito-latin.woff2',
   'manifest.webmanifest',
   'icons/icon.svg',
   'icons/icon-192.png',
