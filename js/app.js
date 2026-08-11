@@ -1,7 +1,7 @@
 /* app.js - Soldi. Router, viste, dialog. */
 'use strict';
 
-const APP_VERSION = 'v18';
+const APP_VERSION = 'v19';
 
 /* ---------- helpers ---------- */
 const EUR = new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' });
@@ -1109,7 +1109,8 @@ const Dialogs = {
         if (real == null) { toast('Scrivi il saldo reale.'); return; }
         const diff = real - bal;
         if (!diff) { toast('Il saldo torna già ✓'); return; }
-        await DB.putTx({ desc: 'Rettifica saldo ' + a.name, date: todayISO(), amount: Math.abs(diff), type: diff > 0 ? 'in' : 'out', account: a.id, toAccount: null, category: DB.cat('rettifiche') ? 'rettifiche' : null, note: 'Rettifica automatica' });
+        const rcat = DB.state.categories.find(c => /rettific/i.test(c.name) && !c.archived);
+        await DB.putTx({ desc: 'Rettifica saldo ' + a.name, date: todayISO(), amount: Math.abs(diff), type: diff > 0 ? 'in' : 'out', account: a.id, toAccount: null, category: rcat ? rcat.id : null, note: 'Rettifica automatica' });
         dlg.close(); toast('Saldo rettificato: ' + fmtS(diff)); render();
       });
     }
@@ -1229,6 +1230,19 @@ const Dialogs = {
       await DB.markSeeded();
     } catch { /* ignora: resta il benvenuto */ }
   }
+
+  // auto-cura: le rettifiche di saldo senza categoria (o con categoria rimossa)
+  // adottano la categoria "Rettifiche" del dispositivo, qualunque sia il suo id
+  try {
+    const rcat = DB.state.categories.find(c => /rettific/i.test(c.name) && !c.archived);
+    if (rcat) {
+      for (const t of [...DB.state.tx]) {
+        if (/^rettifica saldo/i.test(t.desc || '') && (!t.category || !DB.cat(t.category))) {
+          await DB.putTx({ ...t, category: rcat.id });
+        }
+      }
+    }
+  } catch { /* non bloccare l'avvio */ }
 
   // ricorrenze: marca le voci "Ricorrente mensile/annuale" del foglio e crea le occorrenze dovute
   try {
