@@ -96,4 +96,17 @@ assert.equal(DB.nextRecurDate('2026-12-15', 'monthly'), '2027-01-15'); // cambio
 assert.equal(DB.nextRecurDate('2024-02-29', 'yearly'), '2025-02-28');  // bisestile
 assert.equal(DB.nextRecurDate('2026-03-31', 'monthly'), '2026-04-30');
 
-console.log('OK - fisco, parser, merge di sync e ricorrenze combaciano');
+// --- carta collegata al conto: il netto della carta conta sul conto ---
+DB.state.accounts = [
+  { id: 'conto', name: 'Conto', kind: 'bank', initial: 10000 },
+  { id: 'carta', name: 'Carta', kind: 'card', initial: 0, linkedTo: 'conto' },
+];
+DB.state.tx = [
+  { id: 't1', date: '2026-08-01', type: 'out', amount: 3000, account: 'carta' },
+  { id: 't2', date: '2026-08-02', type: 'transfer', amount: 2000, account: 'conto', toAccount: 'carta' },
+];
+const b = DB.balances();
+assert.equal(b.get('conto'), 7000); // 100 - 30 di carta; il giroconto interno si annulla
+assert.equal(b.get('carta'), 0);    // la carta non va in negativo per conto suo
+
+console.log('OK - fisco, parser, merge di sync, ricorrenze e carta collegata combaciano');

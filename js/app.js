@@ -1,7 +1,7 @@
 /* app.js - Soldi. Router, viste, dialog. */
 'use strict';
 
-const APP_VERSION = 'v14';
+const APP_VERSION = 'v15';
 
 /* ---------- helpers ---------- */
 const EUR = new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' });
@@ -192,11 +192,21 @@ const Views = {
       </section>
 
       <div class="tags-row" role="list">
-        ${DB.state.accounts.filter(a => !a.archived).map((a, i) => `
-          <button class="tag-card" role="listitem" style="--tilt:${[-1.2, .8, -.6, 1.1][i % 4]}deg" data-acc="${a.id}">
+        ${DB.state.accounts.filter(a => !a.archived).map(a => {
+          const parent = a.linkedTo ? DB.acc(a.linkedTo) : null;
+          if (parent) {
+            const spesoMese = DB.sums({ ym, account: a.id }).out;
+            return `<button class="tag-card" role="listitem" data-acc="${a.id}">
+              <span class="t-name">${esc(a.icon)} ${esc(a.name)}</span>
+              <span class="t-amount money ${spesoMese > 0 ? 'neg' : ''}">${spesoMese > 0 ? '- ' : ''}${fmt(spesoMese)}</span>
+              <span class="t-link">questo mese · conta su ${esc(parent.name)}</span>
+            </button>`;
+          }
+          return `<button class="tag-card" role="listitem" data-acc="${a.id}">
             <span class="t-name">${esc(a.icon)} ${esc(a.name)}</span>
             <span class="t-amount money ${bal.get(a.id) < 0 ? 'neg' : ''}">${fmt(bal.get(a.id) || 0)}</span>
-          </button>`).join('')}
+          </button>`;
+        }).join('')}
       </div>
 
       <button class="setaside" data-goto="fatture">
@@ -611,7 +621,7 @@ const Views = {
           <div class="rowitem ${a.archived ? 'mut' : ''}">
             <span style="font-size:1.1rem">${esc(a.icon)}</span>
             <span class="r-main"><span class="r-name">${esc(a.name)}${a.archived ? ' (archiviato)' : ''}</span>
-            <span class="r-sub money">Saldo: ${fmt(bal.get(a.id) || 0)}</span></span>
+            <span class="r-sub money">${a.linkedTo && DB.acc(a.linkedTo) ? 'Collegata a ' + esc(DB.acc(a.linkedTo).name) + ' - le spese contano lì' : 'Saldo: ' + fmt(bal.get(a.id) || 0)}</span></span>
             <button class="iconbtn" data-accedit="${a.id}" aria-label="Modifica ${esc(a.name)}"><svg class="ic"><use href="#i-edit"/></svg></button>
           </div>`).join('')}
         <button class="btn" id="acc-add" style="margin-top:10px"><svg class="ic"><use href="#i-plus"/></svg> Nuovo conto</button>
@@ -994,7 +1004,16 @@ const Dialogs = {
           <div class="field"><label for="a-initial">Saldo iniziale €</label><input id="a-initial" type="text" inputmode="decimal" value="${amountToInput(a?.initial || 0)}">
           </div>
         </div>
-        ${isNew ? '' : `
+        <div class="field" id="wrap-link" ${a?.kind === 'card' ? '' : 'hidden'}>
+          <label for="a-link">Collegata al conto</label>
+          <select id="a-link">
+            <option value="">Nessuno (saldo autonomo)</option>
+            ${DB.state.accounts.filter(x => x.kind !== 'card' && !x.archived && x.id !== a?.id).map(x =>
+              `<option value="${x.id}" ${a?.linkedTo === x.id ? 'selected' : ''}>${esc(x.icon)} ${esc(x.name)}</option>`).join('')}
+          </select>
+          <div class="hint">La carta è un'estensione del conto: le sue spese contano sul saldo del conto scelto, la carta non va in negativo per conto suo.</div>
+        </div>
+        ${isNew || a?.linkedTo ? '' : `
         <div class="field"><label for="a-real">Rettifica: saldo reale di oggi €</label>
           <div class="frow"><input id="a-real" type="text" inputmode="decimal" placeholder="${amountToInput(bal)}">
           <button class="btn" id="a-fix" style="flex:0 0 auto">Rettifica</button></div>
@@ -1008,15 +1027,22 @@ const Dialogs = {
         <button class="btn primary" id="a-save">Salva</button>
       </div>`);
 
+    $('#a-kind', dlg).addEventListener('change', () => {
+      $('#wrap-link', dlg).hidden = $('#a-kind', dlg).value !== 'card';
+    });
+
     $('#a-save', dlg).addEventListener('click', async () => {
       const name = $('#a-name', dlg).value.trim();
       if (!name) { toast('Manca il nome.'); return; }
       const initial = parseAmountInput($('#a-initial', dlg).value) ?? 0;
+      const kind = $('#a-kind', dlg).value;
+      const linkedTo = kind === 'card' ? ($('#a-link', dlg).value || null) : null;
       if (isNew) {
         const id = 'acc-' + Date.now().toString(36);
-        DB.state.accounts.push({ id, name, icon: $('#a-icon', dlg).value.trim() || '🏦', kind: $('#a-kind', dlg).value, initial, archived: false });
+        DB.state.accounts.push({ id, name, icon: $('#a-icon', dlg).value.trim() || '🏦', kind, initial, archived: false, ...(linkedTo ? { linkedTo } : {}) });
       } else {
-        Object.assign(a, { name, icon: $('#a-icon', dlg).value.trim() || a.icon, kind: $('#a-kind', dlg).value, initial });
+        Object.assign(a, { name, icon: $('#a-icon', dlg).value.trim() || a.icon, kind, initial });
+        if (linkedTo) a.linkedTo = linkedTo; else delete a.linkedTo;
       }
       await DB.saveAccounts();
       dlg.close(); toast('Conto salvato ✓'); render();

@@ -267,6 +267,13 @@ const DB = (() => {
         if (b.has(t.toAccount)) b.set(t.toAccount, b.get(t.toAccount) + t.amount);
       }
     }
+    // le carte collegate scaricano il loro netto sul conto di riferimento
+    for (const a of state.accounts) {
+      if (a.linkedTo && a.linkedTo !== a.id && b.has(a.id) && b.has(a.linkedTo)) {
+        b.set(a.linkedTo, b.get(a.linkedTo) + b.get(a.id));
+        b.set(a.id, 0);
+      }
+    }
     return b;
   }
 

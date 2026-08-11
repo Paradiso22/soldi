@@ -206,6 +206,7 @@ h3.rule::after { content: ""; flex: 1; height: 1px; background: var(--line); }
 .tag-card:hover { transform: translateY(-3px); }
 .tag-card .t-name { font-size: .8rem; color: var(--ink-3); font-weight: 800; display: flex; gap: 6px; align-items: center; }
 .tag-card .t-amount { font-size: 1.28rem; font-weight: 900; margin-top: 4px; display: block; }
+.tag-card .t-link { display: block; font-size: .68rem; font-weight: 700; color: var(--ink-3); margin-top: 2px; }
 .tag-card.selected { outline: 3px solid var(--brand); outline-offset: 1px; }
 
 /* riquadro da parte (fatture) */
@@ -364,8 +365,9 @@ dialog::backdrop { background: rgba(28, 27, 26, .35); backdrop-filter: blur(3px)
 }
 .dlg-head h2 { font-family: var(--display); font-weight: 700; font-size: 1.3rem; }
 .dlg-body { padding: 4px 20px 18px; overflow-y: auto; }
-.dlg-foot { display: flex; gap: 10px; justify-content: flex-end; padding: 12px 20px calc(16px + env(safe-area-inset-bottom)); border-top: 1px solid var(--line); position: sticky; bottom: 0; background: var(--card); }
-.dlg-foot .spacer { flex: 1; }
+.dlg-foot { display: flex; gap: 10px; align-items: center; padding: 12px 20px calc(16px + env(safe-area-inset-bottom)); border-top: 1px solid var(--line); position: sticky; bottom: 0; background: var(--card); }
+.dlg-foot .spacer { display: none; }
+.dlg-foot .btn { flex: 1; justify-content: center; }
 
 /* chat / veloce */
 .chatlog { display: flex; flex-direction: column; gap: 10px; min-height: 130px; padding: 6px 0 10px; }
