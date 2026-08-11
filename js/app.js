@@ -130,6 +130,10 @@ const Views = {
     </div>`;
   },
   bindWelcome(root) {
+    // online il file seed non esiste (privacy): nascondi il pulsante
+    fetch('seed/seed-data.json', { method: 'HEAD' }).then(r => {
+      if (!r.ok) $('#w-import', root)?.remove();
+    }).catch(() => $('#w-import', root)?.remove());
     $('#w-import', root).addEventListener('click', async () => {
       const btn = $('#w-import', root);
       btn.disabled = true; btn.textContent = 'Importo…';

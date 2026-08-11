@@ -1,7 +1,7 @@
 /* sw.js - offline first */
 'use strict';
 
-const VERSION = 'soldi-v4';
+const VERSION = 'soldi-v5';
 const ASSETS = [
   './',
   'index.html',
@@ -17,7 +17,6 @@ const ASSETS = [
   'icons/icon.svg',
   'icons/icon-192.png',
   'icons/icon-512.png',
-  'seed/seed-data.json',
 ];
 
 self.addEventListener('install', e => {
