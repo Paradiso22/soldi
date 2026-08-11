@@ -1,7 +1,7 @@
 /* app.js - Soldi. Router, viste, dialog. */
 'use strict';
 
-const APP_VERSION = 'v32';
+const APP_VERSION = 'v33';
 
 /* ---------- helpers ---------- */
 const EUR = new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' });
@@ -989,49 +989,64 @@ const Views = {
   },
 };
 
-/* riordino conti con trascinamento: pointer events, quindi dito e mouse insieme */
+/* Riordino conti con trascinamento (dito e mouse).
+   La riga trascinata NON viene spostata nel DOM durante il gesto: spostarla
+   farebbe perdere al browser la presa sul puntatore (pointerup non arriverebbe
+   mai). Si muove con una trasformazione, le altre scorrono per fare spazio,
+   e l'ordine vero si scrive una volta sola al rilascio. */
+let dragInCorso = false;
 function bindAccountReorder(root) {
   const rows = $$('.rowitem.draggable', root);
-  if (!rows.length) return;
-  const list = rows[0].parentElement;
+  if (rows.length < 2) return;
 
-  rows.forEach(row => {
+  rows.forEach((row, startIdx) => {
     const grip = row.querySelector('.grip');
     if (!grip) return;
+
     grip.addEventListener('pointerdown', e => {
+      if (dragInCorso) return; // un trascinamento alla volta
+      dragInCorso = true;
       e.preventDefault();
-      grip.setPointerCapture(e.pointerId);
+      try { grip.setPointerCapture(e.pointerId); } catch { /* non essenziale */ }
+      const startY = e.clientY;
+      const h = row.getBoundingClientRect().height || 56;
+      let target = startIdx;
       row.classList.add('dragging');
 
-      // la riga si sposta davvero nell'elenco mentre trascini: niente calcoli di scarto
       const move = ev => {
-        for (const other of [...list.querySelectorAll('.rowitem.draggable')]) {
-          if (other === row) continue;
-          const b = other.getBoundingClientRect();
-          if (ev.clientY >= b.top && ev.clientY <= b.bottom) {
-            list.insertBefore(row, ev.clientY > b.top + b.height / 2 ? other.nextSibling : other);
-            break;
-          }
-        }
+        const dy = ev.clientY - startY;
+        row.style.transform = `translateY(${dy}px)`;
+        const t = Math.max(0, Math.min(rows.length - 1, startIdx + Math.round(dy / h)));
+        if (t === target) return;
+        target = t;
+        rows.forEach((r, i) => {
+          if (r === row) return;
+          const su = startIdx < target && i > startIdx && i <= target;
+          const giu = startIdx > target && i >= target && i < startIdx;
+          r.style.transform = su ? `translateY(${-h}px)` : giu ? `translateY(${h}px)` : '';
+        });
       };
+
       const up = async () => {
-        grip.removeEventListener('pointermove', move);
-        grip.removeEventListener('pointerup', up);
-        grip.removeEventListener('pointercancel', up);
+        document.removeEventListener('pointermove', move);
+        document.removeEventListener('pointerup', up);
+        document.removeEventListener('pointercancel', up);
+        dragInCorso = false;
+        rows.forEach(r => { r.style.transform = ''; });
         row.classList.remove('dragging');
-        // salva il nuovo ordine
-        const ordine = [...list.querySelectorAll('.rowitem.draggable')].map(r => r.dataset.accid);
-        const byId = new Map(DB.state.accounts.map(a => [a.id, a]));
-        const nuovi = ordine.map(id => byId.get(id)).filter(Boolean);
-        DB.state.accounts.forEach(a => { if (!ordine.includes(a.id)) nuovi.push(a); });
-        DB.state.accounts = nuovi;
+        if (target === startIdx) return;
+        const arr = DB.state.accounts.slice();
+        const [spostato] = arr.splice(startIdx, 1);
+        arr.splice(target, 0, spostato);
+        DB.state.accounts = arr;
         await DB.saveAccounts();
         toast('Ordine dei conti salvato ✓');
         render();
       };
-      grip.addEventListener('pointermove', move);
-      grip.addEventListener('pointerup', up);
-      grip.addEventListener('pointercancel', up);
+
+      document.addEventListener('pointermove', move);
+      document.addEventListener('pointerup', up);
+      document.addEventListener('pointercancel', up);
     });
   });
 }

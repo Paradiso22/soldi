@@ -483,10 +483,12 @@ table.sheet { border-collapse: collapse; width: 100%; font-size: .85rem; min-wid
   touch-action: none; /* il dito trascina la riga, non la pagina */
 }
 .rowitem .grip:active { cursor: grabbing; }
+.rowitem.draggable { transition: transform .16s var(--ease-out); }
 .rowitem.dragging {
   background: var(--card); border-radius: 14px;
   box-shadow: 0 8px 22px rgba(28, 27, 26, .18);
   border-bottom-color: transparent; position: relative; z-index: 2;
+  transition: none; /* segue il dito senza ritardo */
 }
 .rowitem .iconbtn { width: 36px; height: 36px; }
 .rowitem .iconbtn .ic { width: 17px; height: 17px; }
