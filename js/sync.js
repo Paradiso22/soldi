@@ -41,11 +41,15 @@ const Sync = (() => {
     await loadGis();
     const clientId = cfg()?.clientId;
     if (!clientId) throw new Error('Manca il Client ID Google.');
-    if (!tokenClient || tokenClient._cid !== clientId) {
+    // hint = account gia' scelto: evita il selettore account a ogni apertura
+    const hint = cfg()?.hint || '';
+    const key = clientId + '|' + hint;
+    if (!tokenClient || tokenClient._key !== key) {
       tokenClient = google.accounts.oauth2.initTokenClient({
         client_id: clientId, scope: SCOPE, callback: () => {},
+        ...(hint ? { hint } : {}),
       });
-      tokenClient._cid = clientId;
+      tokenClient._key = key;
     }
     tokenPromise = new Promise((res, rej) => {
       // senza gesto dell'utente il popup puo' essere bloccato in silenzio: non restare appesi
@@ -244,6 +248,13 @@ const Sync = (() => {
         cfg().fileId = await driveUpload(null, await encrypt(key, salt, payload()));
       }
       cfg().lastSync = Date.now();
+      // memorizza l'account usato: le prossime richieste token saranno davvero silenziose
+      if (!cfg().hint) {
+        try {
+          const about = await (await api('/drive/v3/about?fields=user(emailAddress)')).json();
+          if (about.user?.emailAddress) cfg().hint = about.user.emailAddress;
+        } catch { /* non essenziale */ }
+      }
       await DB.saveSettings();
       state.status = 'ok';
     } catch (e) {
