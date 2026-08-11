@@ -132,7 +132,28 @@ const Parser = (() => {
   }
 
   /* ---------- Gemini (opzionale, foto scontrino / testo complesso) ---------- */
-  const GEMINI_MODEL = 'gemini-2.5-flash';
+  // Il modello non e' fisso: Google li rinomina/pensiona. Si chiede alla API
+  // quali modelli vede la chiave e si sceglie il flash piu' recente.
+  let geminiModel = null;
+
+  async function pickModel(apiKey) {
+    if (geminiModel) return geminiModel;
+    const res = await fetch('https://generativelanguage.googleapis.com/v1beta/models?pageSize=200', {
+      headers: { 'x-goog-api-key': apiKey },
+    });
+    if (!res.ok) throw new Error(res.status === 400 || res.status === 403 ? 'API key non valida.' : 'Errore Gemini (' + res.status + ').');
+    const j = await res.json();
+    const names = (j.models || [])
+      .filter(m => (m.supportedGenerationMethods || []).includes('generateContent'))
+      .map(m => m.name.replace(/^models\//, ''))
+      .filter(n => /flash/.test(n) && !/(thinking|image|live|tts|audio|8b|lite)/.test(n));
+    // preferisci versione piu' alta, poi il nome piu' corto (la variante "base")
+    const ver = n => parseFloat((n.match(/gemini-(\d+(?:\.\d+)?)/) || [0, 0])[1]) || 0;
+    names.sort((a, b) => ver(b) - ver(a) || a.length - b.length);
+    if (!names.length) throw new Error('Nessun modello Gemini disponibile per questa chiave.');
+    geminiModel = names[0];
+    return geminiModel;
+  }
 
   async function geminiParse({ apiKey, text, imageBase64, mimeType, accounts, categories }) {
     const accList = accounts.filter(a => !a.archived).map(a => a.id + ' = ' + a.name).join('; ');
@@ -145,7 +166,7 @@ Conti: ${accList}. Categorie: ${catList}. Oggi è ${today}. Se è uno scontrino 
     if (imageBase64) parts.push({ inline_data: { mime_type: mimeType || 'image/jpeg', data: imageBase64 } });
     parts.push({ text: text ? text : 'Estrai il movimento dallo scontrino in foto.' });
 
-    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`, {
+    const call = async model => fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
       body: JSON.stringify({
@@ -154,6 +175,11 @@ Conti: ${accList}. Categorie: ${catList}. Oggi è ${today}. Se è uno scontrino 
         generationConfig: { temperature: 0, response_mime_type: 'application/json' },
       }),
     });
+    let res = await call(await pickModel(apiKey));
+    if (res.status === 404) { // modello pensionato nel frattempo: riscopri e riprova
+      geminiModel = null;
+      res = await call(await pickModel(apiKey));
+    }
     if (!res.ok) {
       const err = await res.text().catch(() => '');
       throw new Error(res.status === 400 && /API_KEY/i.test(err) ? 'API key non valida.' : 'Errore Gemini (' + res.status + ').');
