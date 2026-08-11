@@ -1,7 +1,7 @@
 /* sw.js - offline first */
 'use strict';
 
-const VERSION = 'soldi-v12';
+const VERSION = 'soldi-v13';
 const ASSETS = [
   './',
   'index.html',
@@ -35,7 +35,7 @@ self.addEventListener('activate', e => {
 self.addEventListener('fetch', e => {
   const url = new URL(e.request.url);
   if (e.request.method !== 'GET' || url.origin !== location.origin) return; // Gemini & co: rete diretta
-  const isDev = url.hostname === 'localhost' || url.hostname === '127.0.0.1';
+  // prima la rete (aggiornamenti immediati a ogni apertura), cache solo se offline
   const fromNet = () => fetch(e.request).then(res => {
     if (res.ok) {
       const clone = res.clone();
@@ -45,8 +45,6 @@ self.addEventListener('fetch', e => {
   });
   const fromCache = () => caches.match(e.request, { ignoreSearch: true });
   e.respondWith(
-    isDev
-      ? fromNet().catch(() => fromCache().then(h => h || caches.match('index.html')))
-      : fromCache().then(hit => hit || fromNet().catch(() => caches.match('index.html')))
+    fromNet().catch(() => fromCache().then(h => h || caches.match('index.html')))
   );
 });
