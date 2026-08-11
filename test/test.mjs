@@ -89,4 +89,11 @@ assert.equal(m.accounts[0].name, 'Locale');    // metaRev locale piu' alto
 assert.equal(m.settings.imposta, 0.05);        // metaRev remoto piu' alto
 assert.equal(m.metaRev.settings, 200);
 
-console.log('OK - fisco, parser e merge di sync combaciano');
+// --- ricorrenze: matematica delle date ---
+assert.equal(DB.nextRecurDate('2026-08-16', 'monthly'), '2026-09-16');
+assert.equal(DB.nextRecurDate('2026-01-31', 'monthly'), '2026-02-28'); // clampa a fine mese
+assert.equal(DB.nextRecurDate('2026-12-15', 'monthly'), '2027-01-15'); // cambio anno
+assert.equal(DB.nextRecurDate('2024-02-29', 'yearly'), '2025-02-28');  // bisestile
+assert.equal(DB.nextRecurDate('2026-03-31', 'monthly'), '2026-04-30');
+
+console.log('OK - fisco, parser, merge di sync e ricorrenze combaciano');

@@ -1,7 +1,7 @@
 /* app.js - Soldi. Router, viste, dialog. */
 'use strict';
 
-const APP_VERSION = 'v9';
+const APP_VERSION = 'v10';
 
 /* ---------- helpers ---------- */
 const EUR = new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' });
@@ -146,6 +146,8 @@ const Views = {
         seed.tx.forEach((t, i) => { t.createdAt = now - (seed.tx.length - i); });
         await DB.putTxBulk(seed.tx);
         await DB.markSeeded();
+        await DB.migrateRecurringNotes();
+        await DB.materializeRecurring();
         toast('Importati ' + seed.tx.length + ' movimenti ✓');
         render();
       } catch (e) {
@@ -217,6 +219,7 @@ const Views = {
 
       <form class="quickbar" id="quickform">
         <input id="quickinput" type="text" placeholder='Scrivi qui: "12,50 pizza contanti"…' autocomplete="off" aria-label="Aggiunta veloce">
+        <button type="button" class="iconbtn" id="quickmic" aria-label="Detta a voce"><svg class="ic"><use href="#i-mic"/></svg></button>
         <button type="button" class="iconbtn" id="quickphoto" aria-label="Foto scontrino"><svg class="ic"><use href="#i-camera"/></svg></button>
         <button type="submit" class="iconbtn primary" aria-label="Aggiungi"><svg class="ic"><use href="#i-send"/></svg></button>
       </form>
@@ -242,6 +245,33 @@ const Views = {
       Dialogs.quickPreview(p, () => { input.value = ''; });
     });
     $('#quickphoto', root).addEventListener('click', () => Dialogs.photoFlow());
+
+    // dettatura vocale (Web Speech API, it-IT) - gratis, integrata nel browser
+    const mic = $('#quickmic', root);
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) { mic.hidden = true; }
+    else {
+      let rec = null;
+      mic.addEventListener('click', () => {
+        if (rec) { rec.stop(); return; }
+        rec = new SR();
+        rec.lang = 'it-IT';
+        rec.interimResults = true;
+        rec.maxAlternatives = 1;
+        mic.classList.add('rec');
+        rec.onresult = e => {
+          let txt = '';
+          for (const r of e.results) txt += r[0].transcript;
+          // "dodici e cinquanta" a volte arriva come "12 e 50"
+          input.value = txt.trim().replace(/(\d+)\s+e\s+(\d{1,2})(?!\d)/gi, '$1,$2');
+        };
+        rec.onerror = e => {
+          toast(e.error === 'not-allowed' ? 'Permesso microfono negato: abilitalo nelle impostazioni del sito.' : 'Non ho sentito bene, riprova.');
+        };
+        rec.onend = () => { mic.classList.remove('rec'); rec = null; if (input.value) input.focus(); };
+        rec.start();
+      });
+    }
   },
 
   txRow(t, { noDate } = {}) {
@@ -257,7 +287,7 @@ const Views = {
     return `<li><button class="txrow ${UI.lastAdded === t.id ? 'is-new' : ''}" data-id="${t.id}">
       <span class="t-emoji" aria-hidden="true" style="${catDisc(t.category)}">${icon}</span>
       <span class="t-main">
-        <span class="t-desc">${esc(t.desc)}${t.invoice ? ' <span class="badge" style="font-size:.62rem;padding:1px 7px">FATTURA</span>' : ''}</span>
+        <span class="t-desc">${esc(t.desc)}${t.invoice ? ' <span class="badge" style="font-size:.62rem;padding:1px 7px">FATTURA</span>' : ''}${t.recur ? ' <span class="badge" style="font-size:.62rem;padding:1px 7px">🔁 ' + (t.recur === 'monthly' ? 'OGNI MESE' : 'OGNI ANNO') + '</span>' : ''}</span>
         <span class="t-sub">${sub}</span>
       </span>
       <span class="t-amt money ${cls}">${sign} ${fmt(t.amount)}</span>
@@ -770,6 +800,16 @@ const Dialogs = {
             <div id="inv-preview" class="mut" style="font-size:.84rem"></div>
           </div>
         </div>
+        <div class="frow">
+          <div class="field"><label for="t-recur">Si ripete</label>
+            <select id="t-recur">
+              <option value="">Non si ripete</option>
+              <option value="monthly" ${t.recur === 'monthly' ? 'selected' : ''}>Ogni mese, stesso giorno</option>
+              <option value="yearly" ${t.recur === 'yearly' ? 'selected' : ''}>Ogni anno, stesso giorno</option>
+            </select>
+            <div class="hint">La prossima si crea da sola. Per fermarla, elimina (o togli la ripetizione a) l'ultima creata.</div>
+          </div>
+        </div>
         <div class="field"><label for="t-note">Nota (facoltativa)</label><input id="t-note" type="text" value="${esc(t.note || '')}" autocomplete="off"></div>
       </div>
       <div class="dlg-foot">
@@ -826,6 +866,8 @@ const Dialogs = {
         note: $('#t-note', dlg).value.trim() || undefined,
         invoice: (type === 'in' && $('#t-isinv', dlg).checked) ? { bollo: $('#t-bollo', dlg).checked, rivalsa: $('#t-rivalsa', dlg).checked } : null,
       };
+      const recur = $('#t-recur', dlg).value;
+      if (recur) out.recur = recur; else delete out.recur;
       if (out.invoice && !out.category) out.category = 'fatture';
       delete out.dayUnknown; // se lo tocchi a mano, la data diventa vera
       if (!out.invoice) delete out.invoice;
@@ -1087,6 +1129,13 @@ const Dialogs = {
       await DB.markSeeded();
     } catch { /* ignora: resta il benvenuto */ }
   }
+
+  // ricorrenze: marca le voci "Ricorrente mensile/annuale" del foglio e crea le occorrenze dovute
+  try {
+    await DB.migrateRecurringNotes();
+    const created = await DB.materializeRecurring();
+    if (created > 0) setTimeout(() => toast(created + (created === 1 ? ' movimento ricorrente creato' : ' movimenti ricorrenti creati')), 600);
+  } catch { /* non bloccare l'avvio */ }
 
   $('#app').hidden = false;
   window.addEventListener('hashchange', navigate);

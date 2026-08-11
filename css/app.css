@@ -287,6 +287,8 @@ h3.rule::after { content: ""; flex: 1; height: 1px; background: var(--line); }
 .iconbtn:active { transform: scale(.92); }
 .iconbtn.primary { background: var(--brand); color: #fff; }
 .iconbtn.primary:hover { background: var(--brand-deep); }
+.iconbtn.rec { background: var(--brand); color: #fff; animation: micpulse 1.2s ease-in-out infinite; }
+@keyframes micpulse { 50% { box-shadow: 0 0 0 9px rgba(255, 77, 61, .22); } }
 .btn {
   font: inherit; font-weight: 800; font-size: .92rem; cursor: pointer;
   padding: 11px 20px; border-radius: 999px; border: none;

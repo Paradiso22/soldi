@@ -147,6 +147,80 @@ const DB = (() => {
     sortTx();
   }
 
+  /* ---------- ricorrenze ---------- */
+  const isoOf = (y, m, d) => y + '-' + String(m).padStart(2, '0') + '-' + String(d).padStart(2, '0');
+
+  // stesso giorno del mese/anno successivo (31 gennaio -> 28 febbraio)
+  function nextRecurDate(dateISO, recur) {
+    let [y, m, d] = dateISO.split('-').map(Number);
+    if (recur === 'yearly') y += 1; else { m += 1; if (m > 12) { m = 1; y += 1; } }
+    const last = new Date(y, m, 0).getDate();
+    return isoOf(y, m, Math.min(d, last));
+  }
+
+  const eqKey = t => [String(t.desc || '').trim().toUpperCase(), t.amount, t.type, t.account || ''].join('|');
+
+  // crea le occorrenze dovute fino a fine mese corrente. Il flag "recur" vive
+  // sull'ultima occorrenza della catena: eliminarla (o togliere il flag) ferma
+  // le successive; eliminare quelle vecchie non cambia nulla.
+  async function materializeRecurring() {
+    const now = new Date();
+    const eom = isoOf(now.getFullYear(), now.getMonth() + 1, new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate());
+    const goneIds = new Set(state.gone.map(g => g.id));
+    const changed = new Map();
+    let created = 0;
+    for (const start of state.tx.filter(t => t.recur)) {
+      let cur = changed.get(start.id) || start;
+      let guard = 0;
+      while (cur.recur && guard++ < 60) {
+        const nd = nextRecurDate(cur.date, cur.recur);
+        if (nd > eom) break;
+        const root = cur.recurRoot || cur.id;
+        const nid = root + '-r' + nd;
+        if (goneIds.has(nid)) { // l'utente l'aveva eliminata: la catena si ferma
+          const stop = { ...cur }; delete stop.recur; stop.updatedAt = Date.now();
+          changed.set(stop.id, stop);
+          break;
+        }
+        let succ = changed.get(nid) || state.tx.find(t => t.id === nid)
+          || state.tx.find(t => t.id !== cur.id && t.date.slice(0, 7) === nd.slice(0, 7) && eqKey(t) === eqKey(cur));
+        if (succ) {
+          succ = { ...(changed.get(succ.id) || succ) };
+          if (!succ.recur) { succ.recur = cur.recur; succ.recurRoot = root; succ.updatedAt = Date.now(); changed.set(succ.id, succ); }
+        } else {
+          succ = { ...cur, id: nid, date: nd, recurRoot: root, createdAt: Date.now(), updatedAt: Date.now() };
+          delete succ.dayUnknown;
+          changed.set(nid, succ);
+          created++;
+        }
+        const prev = { ...(changed.get(cur.id) || cur) };
+        delete prev.recur; prev.updatedAt = Date.now();
+        changed.set(prev.id, prev);
+        cur = succ;
+      }
+    }
+    if (changed.size) await putTxBulk([...changed.values()]);
+    return created;
+  }
+
+  // una tantum: le voci del foglio con nota "Ricorrente mensile/annuale" ancora
+  // attive (recenti) diventano ricorrenti automatiche
+  async function migrateRecurringNotes() {
+    if (state.tx.length === 0) return 0;
+    if (await idbReq(tstore('meta', 'readonly').get('migr-recur'))) return 0;
+    const now = Date.now();
+    const changed = [];
+    for (const t of state.tx) {
+      if (t.recur || !t.note) continue;
+      const age = now - new Date(t.date).getTime();
+      if (/ricorrente\s+mensile/i.test(t.note) && age < 40 * 864e5) changed.push({ ...t, recur: 'monthly', updatedAt: now });
+      else if (/ricorrente\s+annuale/i.test(t.note) && age < 400 * 864e5) changed.push({ ...t, recur: 'yearly', updatedAt: now });
+    }
+    if (changed.length) await putTxBulk(changed);
+    await saveMeta('migr-recur', true);
+    return changed.length;
+  }
+
   /* ---------- chiave di sync (CryptoKey non estraibile, salvata in locale) ---------- */
   async function getSyncKey() { return (await idbReq(tstore('meta', 'readonly').get('synckey'))) || null; }
   async function getSyncSalt() {
@@ -236,6 +310,7 @@ const DB = (() => {
     state, init, putTx, putTxBulk, deleteTx, replaceAllTx,
     saveAccounts, saveCategories, saveSettings, saveGone, markSeeded, wipeAll,
     getSyncKey, getSyncSalt, setSyncKey,
+    nextRecurDate, materializeRecurring, migrateRecurringNotes,
     acc, cat, balances, sums, invoiceCalc, invoicesOfYear,
     DEFAULT_ACCOUNTS, DEFAULT_CATEGORIES, DEFAULT_SETTINGS,
   };
