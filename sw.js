@@ -1,7 +1,7 @@
 /* sw.js - offline first */
 'use strict';
 
-const VERSION = 'soldi-v5';
+const VERSION = 'soldi-v6';
 const ASSETS = [
   './',
   'index.html',
@@ -10,6 +10,7 @@ const ASSETS = [
   'js/parser.js',
   'js/charts.js',
   'js/backup.js',
+  'js/sync.js',
   'js/app.js',
   'fonts/baloo2-latin.woff2',
   'fonts/nunito-latin.woff2',

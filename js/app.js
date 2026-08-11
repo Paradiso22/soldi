@@ -595,6 +595,24 @@ const Views = {
       </div>
 
       <div class="setcard">
+        <h4>Sincronizzazione Google Drive</h4>
+        ${Sync.enabled() ? `
+        <div class="s-desc">Attiva ✓ - le modifiche si allineano da sole tra i tuoi dispositivi, cifrate prima di salire sul tuo Drive.
+          ${s.sync.lastSync ? 'Ultima sync: ' + new Date(s.sync.lastSync).toLocaleString('it-IT', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) + '.' : ''}
+          ${Sync.state.status === 'reconnect' ? ' <strong style="color:var(--amber)">Serve riconnettersi.</strong>' : ''}
+          ${Sync.state.lastError === 'NEED_PASSWORD' || Sync.state.lastError === 'WRONG_KEY' ? ' <strong style="color:var(--amber)">Reinserisci la password di sync.</strong>' : ''}</div>
+        <div class="chip-row" style="margin:0">
+          <button class="btn primary" id="sy-now">Sincronizza ora</button>
+          <button class="btn" id="sy-off">Scollega</button>
+        </div>` : `
+        <div class="s-desc">Collega il tuo Google Drive: le modifiche fatte dal telefono compaiono anche sul PC (e viceversa) in automatico. Su Drive viaggia solo un file cifrato con una password che scegli tu. Serve un Client ID Google gratuito (chiedi a Claude la guida, ~10 minuti una tantum).</div>
+        <div class="frow">
+          <input type="text" id="sy-cid" placeholder="Client ID Google (…apps.googleusercontent.com)" value="${esc(s.sync?.clientId || '')}" autocomplete="off">
+          <button class="btn primary" id="sy-on" style="flex:0 0 auto">Collega</button>
+        </div>`}
+      </div>
+
+      <div class="setcard">
         <h4>Backup e dati</h4>
         <div class="s-desc">Il backup è un file cifrato con una password che scegli tu: salvalo dove vuoi, ad esempio sul tuo Google Drive. Senza password nessuno lo apre.</div>
         <div class="chip-row" style="margin:0">
@@ -636,6 +654,36 @@ const Views = {
       await DB.saveSettings();
       toast(DB.state.settings.geminiKey ? 'Chiave salvata ✓' : 'Chiave rimossa');
     });
+
+    const syOn = $('#sy-on', root);
+    if (syOn) syOn.addEventListener('click', () => {
+      const cid = $('#sy-cid', root).value.trim();
+      if (!cid.endsWith('.apps.googleusercontent.com')) { toast('Client ID non valido: finisce con .apps.googleusercontent.com'); return; }
+      Dialogs.syncPassword(pw => {
+        toast('Collego Google Drive…');
+        Sync.connect(cid, pw)
+          .then(() => { toast('Sincronizzazione attiva ✓'); render(); })
+          .catch(e => { toast(e.message === 'WRONG_KEY' ? 'Password diversa da quella usata sull\'altro dispositivo.' : e.message); render(); });
+      });
+    });
+    const syNow = $('#sy-now', root);
+    if (syNow) syNow.addEventListener('click', () => {
+      const run = pw => Sync.syncNow({ interactive: true, password: pw })
+        .then(() => { toast('Sincronizzato ✓'); render(); })
+        .catch(e => {
+          if (e.message === 'NEED_PASSWORD' || e.message === 'WRONG_KEY') Dialogs.syncPassword(run, e.message === 'WRONG_KEY');
+          else toast(e.message);
+          render();
+        });
+      run(null);
+    });
+    const syOff = $('#sy-off', root);
+    if (syOff) syOff.addEventListener('click', () => Dialogs.confirm(
+      'Scollegare la sincronizzazione?',
+      'I dati restano su questo dispositivo e sul tuo Drive; semplicemente non si allineeranno più da soli.',
+      'Scollega',
+      async () => { await Sync.disconnect(); toast('Sincronizzazione scollegata'); render(); }
+    ));
 
     $('#bk-export', root).addEventListener('click', () => Dialogs.passwordFlow('export'));
     $('#bk-import', root).addEventListener('click', () => $('#bk-file').click());
@@ -954,6 +1002,29 @@ const Dialogs = {
     });
   },
 
+  /* --- password di sincronizzazione --- */
+  syncPassword(onOk, wrongBefore) {
+    const dlg = Dialogs.open(`
+      <div class="dlg-head"><h2>Password di sincronizzazione</h2><button class="iconbtn dlg-close" aria-label="Chiudi"><svg class="ic"><use href="#i-x"/></svg></button></div>
+      <div class="dlg-body">
+        <p style="color:var(--ink-2);font-size:.9rem;margin-bottom:14px">${wrongBefore
+          ? 'La password non corrisponde a quella usata sull’altro dispositivo. Riprova.'
+          : 'Cifra i dati prima che salgano sul tuo Drive. Se è il primo dispositivo, scegline una nuova; se hai già attivato la sync altrove, usa la <strong>stessa</strong>.'}</p>
+        <div class="field"><label for="sy-pw">Password</label><input id="sy-pw" type="password" autocomplete="off"></div>
+      </div>
+      <div class="dlg-foot">
+        <button class="btn ghost dlg-close">Annulla</button>
+        <button class="btn primary" id="sy-pw-ok">Avanti</button>
+      </div>`);
+    $('#sy-pw-ok', dlg).addEventListener('click', () => {
+      const pw = $('#sy-pw', dlg).value;
+      if (pw.length < 6) { toast('Minimo 6 caratteri.'); return; }
+      dlg.close();
+      onOk(pw);
+    });
+    setTimeout(() => $('#sy-pw', dlg).focus(), 60);
+  },
+
   /* --- password per backup --- */
   passwordFlow(mode, file) {
     const isExp = mode === 'export';
@@ -1018,6 +1089,8 @@ const Dialogs = {
   window.addEventListener('hashchange', navigate);
   $('#btn-add').addEventListener('click', () => Dialogs.txForm(null));
   navigate();
+  Sync.boot();
+  Sync.onChange(() => { if (UI.route === 'impostazioni') render(); });
 
   if ('serviceWorker' in navigator && location.protocol !== 'file:') {
     navigator.serviceWorker.register('sw.js').catch(() => {});

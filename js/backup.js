@@ -51,11 +51,12 @@ const Backup = (() => {
   }
 
   async function applyBackup(j) {
-    const gemini = DB.state.settings.geminiKey; // conserva la chiave locale
+    const gemini = DB.state.settings.geminiKey; // conserva chiavi e sync locali
+    const sync = DB.state.settings.sync;
     await DB.wipeAll();
     DB.state.accounts = j.accounts;
     DB.state.categories = j.categories;
-    DB.state.settings = Object.assign({}, DB.DEFAULT_SETTINGS, j.settings, { geminiKey: gemini });
+    DB.state.settings = Object.assign({}, DB.DEFAULT_SETTINGS, j.settings, { geminiKey: gemini, ...(sync ? { sync } : {}) });
     await Promise.all([DB.saveAccounts(), DB.saveCategories(), DB.saveSettings(), DB.markSeeded()]);
     await DB.putTxBulk(j.tx);
   }

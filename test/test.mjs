@@ -62,4 +62,31 @@ assert.equal(p.date.slice(5), '08-05'); // giorno giusto, niente slittamenti UTC
 p = Parser.parse('senza importo qui', env);
 assert.ok(p.error);
 
-console.log('OK - fisco e parser combaciano col foglio');
+// --- sync: merge tra dispositivi ---
+(0, eval)(load('js/sync.js') + '\n;globalThis.Sync = Sync;');
+const { Sync } = globalThis;
+
+const mk = (id, updatedAt, desc) => ({ id, updatedAt, desc, amount: 100, type: 'out', date: '2026-08-01' });
+const local = {
+  tx: [mk('a', 10, 'A-vecchio'), mk('b', 50, 'B-locale-nuovo'), mk('l', 5, 'solo-locale')],
+  gone: [{ id: 'x', updatedAt: 90 }],
+  accounts: [{ id: 'acc1', name: 'Locale' }], categories: [], settings: { imposta: 0.15 },
+  metaRev: { accounts: 100, categories: 0, settings: 0 },
+};
+const remote = {
+  tx: [mk('a', 20, 'A-remoto-nuovo'), mk('b', 30, 'B-vecchio'), mk('r', 5, 'solo-remoto'), mk('x', 50, 'eliminato-in-locale')],
+  gone: [],
+  accounts: [{ id: 'acc1', name: 'Remoto' }], categories: [], settings: { imposta: 0.05 },
+  metaRev: { accounts: 40, categories: 0, settings: 200 },
+};
+const m = Sync.merge(local, remote);
+const byId = Object.fromEntries(m.tx.map(t => [t.id, t]));
+assert.equal(byId.a.desc, 'A-remoto-nuovo');   // vince il piu' recente
+assert.equal(byId.b.desc, 'B-locale-nuovo');   // vince il piu' recente
+assert.ok(byId.l && byId.r);                   // gli esclusivi restano entrambi
+assert.equal(byId.x, undefined);               // il tombstone piu' recente elimina
+assert.equal(m.accounts[0].name, 'Locale');    // metaRev locale piu' alto
+assert.equal(m.settings.imposta, 0.05);        // metaRev remoto piu' alto
+assert.equal(m.metaRev.settings, 200);
+
+console.log('OK - fisco, parser e merge di sync combaciano');

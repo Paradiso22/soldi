@@ -8,9 +8,11 @@ const DB = (() => {
   // stato in memoria (piccolo: ~1-5k movimenti, tutto in RAM va benissimo)
   const state = {
     tx: [],            // movimenti
+    gone: [],          // tombstone eliminazioni: {id, updatedAt} (per la sync)
     accounts: [],
     categories: [],
     settings: {},
+    metaRev: {},       // ultima modifica di accounts/categories/settings (per la sync)
     seeded: false,
   };
 
@@ -63,18 +65,22 @@ const DB = (() => {
 
   async function init() {
     db = await open();
-    const [tx, accounts, categories, settings, seeded] = await Promise.all([
+    const [tx, accounts, categories, settings, seeded, gone, metaRev] = await Promise.all([
       idbReq(tstore('tx', 'readonly').getAll()),
       idbReq(tstore('meta', 'readonly').get('accounts')),
       idbReq(tstore('meta', 'readonly').get('categories')),
       idbReq(tstore('meta', 'readonly').get('settings')),
       idbReq(tstore('meta', 'readonly').get('seeded')),
+      idbReq(tstore('meta', 'readonly').get('gone')),
+      idbReq(tstore('meta', 'readonly').get('metaRev')),
     ]);
     state.tx = tx || [];
     state.accounts = accounts || structuredClone(DEFAULT_ACCOUNTS);
     state.categories = categories || structuredClone(DEFAULT_CATEGORIES);
     state.settings = Object.assign({}, DEFAULT_SETTINGS, settings || {});
     state.seeded = !!seeded;
+    state.gone = (gone || []).filter(g => g.updatedAt > Date.now() - 90 * 864e5);
+    state.metaRev = metaRev || {};
     sortTx();
   }
 
@@ -87,10 +93,12 @@ const DB = (() => {
   async function putTx(t) {
     if (!t.id) t.id = 'tx-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
     if (!t.createdAt) t.createdAt = Date.now();
+    t.updatedAt = Date.now();
     await idbReq(tstore('tx', 'readwrite').put(t));
     const i = state.tx.findIndex(x => x.id === t.id);
     if (i >= 0) state.tx[i] = t; else state.tx.push(t);
     sortTx();
+    ping();
     return t;
   }
 
@@ -105,17 +113,55 @@ const DB = (() => {
     list.forEach(t => byId.set(t.id, t));
     state.tx = [...byId.values()];
     sortTx();
+    ping();
   }
 
   async function deleteTx(id) {
     await idbReq(tstore('tx', 'readwrite').delete(id));
     state.tx = state.tx.filter(t => t.id !== id);
+    state.gone.push({ id, updatedAt: Date.now() });
+    await saveMeta('gone', state.gone);
+    ping();
   }
 
-  async function saveAccounts() { await saveMeta('accounts', state.accounts); }
-  async function saveCategories() { await saveMeta('categories', state.categories); }
-  async function saveSettings() { await saveMeta('settings', state.settings); }
+  // avvisa la sync (se attiva) che i dati sono cambiati
+  function ping() { if (typeof Sync !== 'undefined') Sync.schedule(); }
+
+  async function bumpRev(k) { state.metaRev[k] = Date.now(); await saveMeta('metaRev', state.metaRev); }
+  async function saveAccounts() { await saveMeta('accounts', state.accounts); await bumpRev('accounts'); ping(); }
+  async function saveCategories() { await saveMeta('categories', state.categories); await bumpRev('categories'); ping(); }
+  async function saveSettings() { await saveMeta('settings', state.settings); await bumpRev('settings'); ping(); }
+  async function saveGone() { await saveMeta('gone', state.gone); }
   async function markSeeded() { state.seeded = true; await saveMeta('seeded', true); }
+
+  // sostituisce tutti i movimenti (usato dalla sync dopo il merge)
+  async function replaceAllTx(list) {
+    await new Promise((res, rej) => {
+      const trn = db.transaction('tx', 'readwrite');
+      const st = trn.objectStore('tx');
+      st.clear();
+      list.forEach(t => st.put(t));
+      trn.oncomplete = res; trn.onerror = () => rej(trn.error);
+    });
+    state.tx = [...list];
+    sortTx();
+  }
+
+  /* ---------- chiave di sync (CryptoKey non estraibile, salvata in locale) ---------- */
+  async function getSyncKey() { return (await idbReq(tstore('meta', 'readonly').get('synckey'))) || null; }
+  async function getSyncSalt() {
+    const s = await idbReq(tstore('meta', 'readonly').get('syncsalt'));
+    return s ? new Uint8Array(s) : null;
+  }
+  async function setSyncKey(key, salt) {
+    if (key) {
+      await saveMeta('synckey', key);
+      await saveMeta('syncsalt', Array.from(salt));
+    } else {
+      await idbReq(tstore('meta', 'readwrite').delete('synckey'));
+      await idbReq(tstore('meta', 'readwrite').delete('syncsalt'));
+    }
+  }
 
   async function wipeAll() {
     await new Promise((res, rej) => {
@@ -125,6 +171,8 @@ const DB = (() => {
       trn.oncomplete = res; trn.onerror = () => rej(trn.error);
     });
     state.tx = [];
+    state.gone = [];
+    state.metaRev = {};
     state.accounts = structuredClone(DEFAULT_ACCOUNTS);
     state.categories = structuredClone(DEFAULT_CATEGORIES);
     state.settings = structuredClone(DEFAULT_SETTINGS);
@@ -185,8 +233,9 @@ const DB = (() => {
   }
 
   return {
-    state, init, putTx, putTxBulk, deleteTx,
-    saveAccounts, saveCategories, saveSettings, markSeeded, wipeAll,
+    state, init, putTx, putTxBulk, deleteTx, replaceAllTx,
+    saveAccounts, saveCategories, saveSettings, saveGone, markSeeded, wipeAll,
+    getSyncKey, getSyncSalt, setSyncKey,
     acc, cat, balances, sums, invoiceCalc, invoicesOfYear,
     DEFAULT_ACCOUNTS, DEFAULT_CATEGORIES, DEFAULT_SETTINGS,
   };
