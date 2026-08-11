@@ -607,7 +607,7 @@ const Views = {
         </div>` : `
         <div class="s-desc">Collega il tuo Google Drive: le modifiche fatte dal telefono compaiono anche sul PC (e viceversa) in automatico. Su Drive viaggia solo un file cifrato con una password che scegli tu. Serve un Client ID Google gratuito (chiedi a Claude la guida, ~10 minuti una tantum).</div>
         <div class="frow">
-          <input type="text" id="sy-cid" placeholder="Client ID Google (…apps.googleusercontent.com)" value="${esc(s.sync?.clientId || '')}" autocomplete="off">
+          <input type="text" id="sy-cid" placeholder="Client ID Google (…apps.googleusercontent.com)" value="${esc(s.sync?.clientId || '956096436311-j52o8b7opd33ll09mg5r2kujip13haug.apps.googleusercontent.com')}" autocomplete="off">
           <button class="btn primary" id="sy-on" style="flex:0 0 auto">Collega</button>
         </div>`}
       </div>
