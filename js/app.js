@@ -1,7 +1,7 @@
 /* app.js - Soldi. Router, viste, dialog. */
 'use strict';
 
-const APP_VERSION = 'v10';
+const APP_VERSION = 'v11';
 
 /* ---------- helpers ---------- */
 const EUR = new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' });
@@ -210,6 +210,22 @@ const Views = {
 
       ${noCat ? `<button class="badge warn" id="fix-nocat" style="margin-top:12px;cursor:pointer;font-family:inherit">
         <svg class="ic" style="width:14px;height:14px"><use href="#i-alert"/></svg> ${noCat} movimenti senza categoria - sistemali</button>` : ''}
+
+      ${m.out > 0 ? (() => {
+        const slices = donutSlices({ ym });
+        return `<button class="chartcard" id="home-chart" style="margin-top:16px;width:100%;text-align:left;border:none;cursor:pointer;font-family:inherit">
+        <h4>Dove vanno questo mese</h4>
+        <div class="c-sub">${MESI[+ym.slice(5) - 1]} · tocca per tutte le statistiche</div>
+        <div id="home-donut"></div>
+        <div class="legend">
+          ${slices.slice(0, 4).map(s2 => `<span class="lg-row">
+            <span class="swatch" style="background:${s2.color}"></span>
+            <span class="lg-name">${esc(s2.label)}</span>
+            <span class="lg-val money">${fmt(s2.value)}</span>
+          </span>`).join('')}
+        </div>
+      </button>`;
+      })() : ''}
       </div><div class="colB">
 
       <h3 class="rule">Ultimi movimenti</h3>
@@ -234,6 +250,14 @@ const Views = {
     $('[data-goto="fatture"]', root).addEventListener('click', () => location.hash = '#/fatture');
     const fx = $('#fix-nocat', root);
     if (fx) fx.addEventListener('click', () => { UI.mov = { ym: null, account: null, category: '__none__', search: '', type: null }; location.hash = '#/movimenti'; });
+    const hc = $('#home-chart', root);
+    if (hc) {
+      const ym = todayISO().slice(0, 7);
+      const slices = donutSlices({ ym });
+      const tot = slices.reduce((s, x) => s + x.value, 0);
+      if (tot) Charts.donut($('#home-donut', root), slices, { centerLabel: 'Uscite', centerValue: fmt(tot), fmt });
+      hc.addEventListener('click', () => { UI.stat = { ym, scope: 'month', table: false }; location.hash = '#/statistiche'; });
+    }
     $$('.txrow', root).forEach(r => r.addEventListener('click', () => Dialogs.txForm(DB.state.tx.find(t => t.id === r.dataset.id))));
 
     const form = $('#quickform', root), input = $('#quickinput', root);
