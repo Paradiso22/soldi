@@ -1,7 +1,7 @@
 /* app.js - Soldi. Router, viste, dialog. */
 'use strict';
 
-const APP_VERSION = 'v30';
+const APP_VERSION = 'v32';
 
 /* ---------- helpers ---------- */
 const EUR = new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' });
@@ -152,6 +152,7 @@ function catDisc(catId) {
 
 function render() {
   Charts.hideTip();
+  document.body.dataset.route = UI.route;
   const view = $('#view');
   const needsWelcome = !DB.state.seeded && DB.state.tx.length === 0;
   $$('.tabbar a, .sidenav a').forEach(a => {
@@ -285,6 +286,13 @@ const Views = {
         </div>
       </div>`;
       })() : ''}
+
+      <form class="quickbar" id="quickform">
+        <input id="quickinput" type="text" placeholder='Scrivi qui: "12,50 pizza contanti"…' autocomplete="off" aria-label="Aggiunta veloce">
+        <button type="button" class="iconbtn" id="quickmic" aria-label="Detta a voce"><svg class="ic"><use href="#i-mic"/></svg></button>
+        <button type="button" class="iconbtn" id="quickphoto" aria-label="Foto scontrino"><svg class="ic"><use href="#i-camera"/></svg></button>
+        <button type="submit" class="iconbtn primary" aria-label="Aggiungi"><svg class="ic"><use href="#i-send"/></svg></button>
+      </form>
       </div><div class="colB">
 
       ${upcoming.length ? `
@@ -296,12 +304,6 @@ const Views = {
         <li class="empty"><div class="e-marker">Tutto in ordine</div>Scrivi la prima spesa qui sotto.</li>`}
       </ul>
 
-      <form class="quickbar" id="quickform">
-        <input id="quickinput" type="text" placeholder='Scrivi qui: "12,50 pizza contanti"…' autocomplete="off" aria-label="Aggiunta veloce">
-        <button type="button" class="iconbtn" id="quickmic" aria-label="Detta a voce"><svg class="ic"><use href="#i-mic"/></svg></button>
-        <button type="button" class="iconbtn" id="quickphoto" aria-label="Foto scontrino"><svg class="ic"><use href="#i-camera"/></svg></button>
-        <button type="submit" class="iconbtn primary" aria-label="Aggiungi"><svg class="ic"><use href="#i-send"/></svg></button>
-      </form>
       <div class="mut" style="font-size:.68rem;text-align:center;padding:10px 0 2px">Soldi ${APP_VERSION}</div>
       </div></div>`;
   },
@@ -690,12 +692,14 @@ const Views = {
         <h4>Conti</h4>
         <div class="s-desc">Aggiungi, modifica o archivia. Il saldo si calcola da saldo iniziale + movimenti.</div>
         ${DB.state.accounts.map(a => `
-          <div class="rowitem ${a.archived ? 'mut' : ''}">
+          <div class="rowitem draggable ${a.archived ? 'mut' : ''}" data-accid="${a.id}">
+            <button class="grip" aria-label="Trascina per riordinare ${esc(a.name)}"><svg class="ic"><use href="#i-grip"/></svg></button>
             <span style="font-size:1.1rem">${esc(a.icon)}</span>
             <span class="r-main"><span class="r-name">${esc(a.name)}${a.archived ? ' (archiviato)' : ''}</span>
             <span class="r-sub money">${a.linkedTo && DB.acc(a.linkedTo) ? 'Collegata a ' + esc(DB.acc(a.linkedTo).name) + ' - le spese contano lì' : 'Saldo: ' + fmt(bal.get(a.id) || 0)}</span></span>
             <button class="iconbtn" data-accedit="${a.id}" aria-label="Modifica ${esc(a.name)}"><svg class="ic"><use href="#i-edit"/></svg></button>
           </div>`).join('')}
+        <div class="hint" style="margin-top:8px">Trascina dalla maniglia ⠿ per cambiare l'ordine: lo stesso ordine si vede in home.</div>
         <button class="btn" id="acc-add" style="margin-top:10px"><svg class="ic"><use href="#i-plus"/></svg> Nuovo conto</button>
       </div>
 
@@ -838,6 +842,7 @@ const Views = {
       <p class="mut" style="font-size:.76rem;padding:4px 2px 20px">Soldi non ha server: i dati vivono in questo browser (IndexedDB), i backup sono cifrati AES-256. Versione ${APP_VERSION}</p>`;
   },
   bindImpostazioni(root) {
+    bindAccountReorder(root);
     $$('[data-accedit]', root).forEach(b => b.addEventListener('click', () => Dialogs.accountForm(DB.acc(b.dataset.accedit))));
     $('#acc-add', root).addEventListener('click', () => Dialogs.accountForm(null));
     $$('[data-catedit]', root).forEach(b => b.addEventListener('click', () => Dialogs.categoryForm(DB.cat(b.dataset.catedit))));
@@ -983,6 +988,53 @@ const Views = {
     ));
   },
 };
+
+/* riordino conti con trascinamento: pointer events, quindi dito e mouse insieme */
+function bindAccountReorder(root) {
+  const rows = $$('.rowitem.draggable', root);
+  if (!rows.length) return;
+  const list = rows[0].parentElement;
+
+  rows.forEach(row => {
+    const grip = row.querySelector('.grip');
+    if (!grip) return;
+    grip.addEventListener('pointerdown', e => {
+      e.preventDefault();
+      grip.setPointerCapture(e.pointerId);
+      row.classList.add('dragging');
+
+      // la riga si sposta davvero nell'elenco mentre trascini: niente calcoli di scarto
+      const move = ev => {
+        for (const other of [...list.querySelectorAll('.rowitem.draggable')]) {
+          if (other === row) continue;
+          const b = other.getBoundingClientRect();
+          if (ev.clientY >= b.top && ev.clientY <= b.bottom) {
+            list.insertBefore(row, ev.clientY > b.top + b.height / 2 ? other.nextSibling : other);
+            break;
+          }
+        }
+      };
+      const up = async () => {
+        grip.removeEventListener('pointermove', move);
+        grip.removeEventListener('pointerup', up);
+        grip.removeEventListener('pointercancel', up);
+        row.classList.remove('dragging');
+        // salva il nuovo ordine
+        const ordine = [...list.querySelectorAll('.rowitem.draggable')].map(r => r.dataset.accid);
+        const byId = new Map(DB.state.accounts.map(a => [a.id, a]));
+        const nuovi = ordine.map(id => byId.get(id)).filter(Boolean);
+        DB.state.accounts.forEach(a => { if (!ordine.includes(a.id)) nuovi.push(a); });
+        DB.state.accounts = nuovi;
+        await DB.saveAccounts();
+        toast('Ordine dei conti salvato ✓');
+        render();
+      };
+      grip.addEventListener('pointermove', move);
+      grip.addEventListener('pointerup', up);
+      grip.addEventListener('pointercancel', up);
+    });
+  });
+}
 
 /* ---------- dialogs ---------- */
 const Dialogs = {
@@ -1481,6 +1533,7 @@ const Dialogs = {
   $('#app').hidden = false;
   window.addEventListener('hashchange', navigate);
   $('#btn-add').addEventListener('click', () => Dialogs.txForm(null));
+  $('#btn-add-desk').addEventListener('click', () => Dialogs.txForm(null));
   // delega sul documento: il bottone impostazioni funziona anche se il boot parziale fallisse
   document.addEventListener('click', e => {
     if (e.target.closest && e.target.closest('#btn-settings')) location.hash = '#/impostazioni';

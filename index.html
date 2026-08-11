@@ -9,7 +9,7 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icons/icon-192.png">
-<link rel="stylesheet" href="css/app.css?v=30">
+<link rel="stylesheet" href="css/app.css?v=32">
 </head>
 <body>
 <!--
@@ -51,6 +51,7 @@ review, the verdict, and DESIGN.md.
     <symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 4 2.8 19.5h18.4z"/><path d="M12 10v4.2M12 17.2h.01"/></symbol>
     <symbol id="i-spark" viewBox="0 0 24 24"><path d="M12 3.5 13.8 9l5.7.2-4.5 3.5 1.6 5.6L12 15l-4.6 3.3L9 12.7 4.5 9.2 10.2 9z"/></symbol>
     <symbol id="i-mic" viewBox="0 0 24 24"><rect x="9" y="3.5" width="6" height="11" rx="3"/><path d="M5.5 11.5a6.5 6.5 0 0 0 13 0M12 18v3M8.5 21h7"/></symbol>
+    <symbol id="i-grip" viewBox="0 0 24 24"><circle cx="9" cy="6" r="1.5" fill="currentColor" stroke="none"/><circle cx="15" cy="6" r="1.5" fill="currentColor" stroke="none"/><circle cx="9" cy="12" r="1.5" fill="currentColor" stroke="none"/><circle cx="15" cy="12" r="1.5" fill="currentColor" stroke="none"/><circle cx="9" cy="18" r="1.5" fill="currentColor" stroke="none"/><circle cx="15" cy="18" r="1.5" fill="currentColor" stroke="none"/></symbol>
     <symbol id="i-tri-up" viewBox="0 0 24 24"><path d="M12 6 20 18H4z" fill="currentColor" stroke="none"/></symbol>
     <symbol id="i-tri-down" viewBox="0 0 24 24"><path d="M12 18 4 6h16z" fill="currentColor" stroke="none"/></symbol>
   </defs>
@@ -58,8 +59,11 @@ review, the verdict, and DESIGN.md.
 
 <div id="app" hidden>
   <header class="topbar">
-    <h1 class="brand"><span class="brand-euro" aria-hidden="true">€</span> Soldi</h1>
-    <button class="iconbtn" id="btn-settings" data-nav="impostazioni" aria-label="Impostazioni"><svg class="ic"><use href="#i-gear"/></svg></button>
+    <a class="brand" href="#/" aria-label="Vai alla home"><span class="brand-euro" aria-hidden="true">€</span> Soldi</a>
+    <div class="topbar-actions">
+      <button class="btn primary desk-only" id="btn-add-desk"><svg class="ic"><use href="#i-plus"/></svg> Aggiungi</button>
+      <button class="iconbtn" id="btn-settings" data-nav="impostazioni" aria-label="Impostazioni"><svg class="ic"><use href="#i-gear"/></svg></button>
+    </div>
   </header>
 
   <nav class="sidenav" aria-label="Navigazione">
@@ -86,14 +90,14 @@ review, the verdict, and DESIGN.md.
 
 <noscript><p style="padding:2rem;font-family:sans-serif">Soldi ha bisogno di JavaScript per funzionare.</p></noscript>
 
-<script src="js/db.js?v=30" defer></script>
-<script src="js/parser.js?v=30" defer></script>
-<script src="js/charts.js?v=30" defer></script>
-<script src="js/backup.js?v=30" defer></script>
-<script src="js/sync.js?v=30" defer></script>
-<script src="js/batti.js?v=30" defer></script>
-<script src="js/gate.js?v=30" defer></script>
-<script src="js/lock.js?v=30" defer></script>
-<script src="js/app.js?v=30" defer></script>
+<script src="js/db.js?v=32" defer></script>
+<script src="js/parser.js?v=32" defer></script>
+<script src="js/charts.js?v=32" defer></script>
+<script src="js/backup.js?v=32" defer></script>
+<script src="js/sync.js?v=32" defer></script>
+<script src="js/batti.js?v=32" defer></script>
+<script src="js/gate.js?v=32" defer></script>
+<script src="js/lock.js?v=32" defer></script>
+<script src="js/app.js?v=32" defer></script>
 </body>
 </html>

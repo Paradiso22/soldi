@@ -95,7 +95,13 @@ body {
 .brand {
   font-family: var(--display); font-size: 1.45rem; font-weight: 700;
   display: flex; align-items: center; gap: 9px; letter-spacing: -.01em;
+  color: var(--ink); text-decoration: none; cursor: pointer;
+  transition: transform .15s var(--ease-pop);
 }
+.brand:active { transform: scale(.97); }
+.topbar-actions { display: flex; align-items: center; gap: 10px; }
+/* .btn.desk-only per battere la specificita' di .btn { display:inline-flex } */
+.desk-only, .btn.desk-only { display: none; }
 .brand-euro {
   width: 34px; height: 34px; border-radius: 11px; background: var(--brand);
   color: #fff; display: grid; place-items: center; font-size: 1.15rem;
@@ -107,6 +113,8 @@ main {
   padding: 6px 18px calc(var(--nav-h) + 28px + env(safe-area-inset-bottom));
   outline: none; width: 100%;
 }
+/* nella home la barra scrivi e' fissa: lascia spazio sotto */
+body[data-route="home"] main { padding-bottom: calc(var(--nav-h) + 92px + env(safe-area-inset-bottom)); }
 
 /* tab bar mobile */
 .tabbar {
@@ -152,7 +160,8 @@ main {
   }
   .sidenav a:hover { background: var(--card); color: var(--ink); }
   .sidenav a[aria-current="page"] { color: var(--brand); background: var(--brand-soft); }
-  main { padding: 10px 30px 40px; width: 100%; }
+  main, body[data-route="home"] main { padding: 10px 30px 40px; width: 100%; }
+  .desk-only, .btn.desk-only { display: inline-flex; }
 }
 
 /* ---------- tipografia ---------- */
@@ -195,6 +204,11 @@ h3.rule::after { content: ""; flex: 1; height: 1px; background: var(--line); }
 /* card conto */
 .tags-row { display: flex; gap: 12px; overflow-x: auto; padding: 12px 2px 14px; scrollbar-width: none; }
 .tags-row::-webkit-scrollbar { display: none; }
+/* su desktop niente scorrimento orizzontale nascosto: i conti vanno a capo e si vedono tutti */
+@media (min-width: 920px) {
+  .tags-row { flex-wrap: wrap; overflow: visible; }
+  .tags-row .tag-card { flex: 1 1 160px; max-width: 240px; }
+}
 .tag-card {
   flex: none; min-width: 148px; padding: 14px 16px;
   background: var(--card); border: none;
@@ -265,20 +279,33 @@ h3.rule::after { content: ""; flex: 1; height: 1px; background: var(--line); }
 .badge.warn { color: var(--amber); background: var(--sun-soft); }
 
 /* ---------- barra scrivi (quick add) ---------- */
+/* mobile: sempre visibile, non serve scorrere */
 .quickbar {
-  position: sticky; bottom: calc(var(--nav-h) + env(safe-area-inset-bottom) + 10px);
-  margin-top: 18px; display: flex; gap: 8px; align-items: center;
+  position: fixed; z-index: 45;
+  left: 12px; right: 12px;
+  /* la tabbar e' alta ~78px: questo la scavalca senza toccarla */
+  bottom: calc(var(--nav-h) + env(safe-area-inset-bottom) + 24px);
+  display: flex; gap: 8px; align-items: center;
   background: var(--card);
   border-radius: 999px; padding: 8px 8px 8px 18px;
   box-shadow: 0 10px 30px rgba(28, 27, 26, .16);
 }
-@media (min-width: 920px) { .quickbar { bottom: 16px; max-width: 660px; } }
 .quickbar input {
   flex: 1; background: none; border: none; color: var(--ink);
   font: inherit; font-size: .95rem; font-weight: 700; outline: none; min-width: 0;
 }
 .quickbar input::placeholder { color: var(--ink-3); font-weight: 600; }
 .quickbar .iconbtn { flex: none; border-radius: 50%; }
+/* desktop: sotto il grafico, nel flusso, piu' grande */
+@media (min-width: 920px) {
+  .quickbar {
+    position: static; margin-top: 18px; padding: 12px 12px 12px 24px;
+    gap: 10px; box-shadow: var(--shadow);
+  }
+  .quickbar input { font-size: 1.05rem; padding: 6px 0; }
+  .quickbar .iconbtn { width: 48px; height: 48px; }
+  .quickbar .iconbtn .ic { width: 24px; height: 24px; }
+}
 
 /* ---------- bottoni ---------- */
 .iconbtn {
@@ -450,6 +477,17 @@ table.sheet { border-collapse: collapse; width: 100%; font-size: .85rem; min-wid
 .rowitem .r-main { flex: 1; min-width: 0; }
 .rowitem .r-name { font-weight: 800; font-size: .93rem; }
 .rowitem .r-sub { font-size: .77rem; color: var(--ink-3); font-weight: 700; }
+.rowitem .grip {
+  border: none; background: none; color: var(--ink-3); cursor: grab;
+  padding: 4px; margin-left: -4px; display: grid; place-items: center;
+  touch-action: none; /* il dito trascina la riga, non la pagina */
+}
+.rowitem .grip:active { cursor: grabbing; }
+.rowitem.dragging {
+  background: var(--card); border-radius: 14px;
+  box-shadow: 0 8px 22px rgba(28, 27, 26, .18);
+  border-bottom-color: transparent; position: relative; z-index: 2;
+}
 .rowitem .iconbtn { width: 36px; height: 36px; }
 .rowitem .iconbtn .ic { width: 17px; height: 17px; }
 
