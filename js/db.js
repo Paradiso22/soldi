@@ -276,9 +276,17 @@ const DB = (() => {
   const acc = id => state.accounts.find(a => a.id === id) || null;
   const cat = id => state.categories.find(c => c.id === id) || null;
 
+  const localToday = () => {
+    const d = new Date();
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  };
+
+  // i movimenti futuri (es. ricorrenze gia' create) NON contano finche' non arriva il loro giorno
   function balances() {
     const b = new Map(state.accounts.map(a => [a.id, a.initial || 0]));
+    const today = localToday();
     for (const t of state.tx) {
+      if (t.date > today) continue;
       if (t.type === 'in') { if (b.has(t.account)) b.set(t.account, b.get(t.account) + t.amount); }
       else if (t.type === 'out') { if (b.has(t.account)) b.set(t.account, b.get(t.account) - t.amount); }
       else if (t.type === 'transfer') {
@@ -296,12 +304,17 @@ const DB = (() => {
     return b;
   }
 
-  // somme entrate/uscite per un filtro { ym: 'YYYY-MM' | y: 'YYYY', account, category }
+  // somme entrate/uscite per un filtro { ym | y | from/to, account, category }
+  // Solo fino a oggi (i futuri non contano), salvo includeFuture.
   function sums(f = {}) {
     let inc = 0, out = 0;
+    const today = localToday();
     for (const t of state.tx) {
+      if (!f.includeFuture && t.date > today) continue;
       if (f.ym && !t.date.startsWith(f.ym)) continue;
       if (f.y && !t.date.startsWith(f.y)) continue;
+      if (f.from && t.date < f.from) continue;
+      if (f.to && t.date > f.to) continue;
       if (f.account && t.account !== f.account && t.toAccount !== f.account) continue;
       if (f.category && t.category !== f.category) continue;
       if (t.type === 'in') inc += t.amount;

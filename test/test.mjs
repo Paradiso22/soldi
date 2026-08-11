@@ -109,6 +109,12 @@ const b = DB.balances();
 assert.equal(b.get('conto'), 7000); // 100 - 30 di carta; il giroconto interno si annulla
 assert.equal(b.get('carta'), 0);    // la carta non va in negativo per conto suo
 
+// i movimenti futuri non contano finche' non arriva il loro giorno
+DB.state.tx.push({ id: 't3', date: '2099-01-01', type: 'out', amount: 99999, account: 'conto' });
+assert.equal(DB.balances().get('conto'), 7000);
+assert.equal(DB.sums({ y: '2099' }).out, 0);
+assert.equal(DB.sums({ y: '2099', includeFuture: true }).out, 99999);
+
 // --- ponte Batti: parsing del link e mappatura categorie ---
 (0, eval)(load('js/batti.js') + '\n;globalThis.Batti = Batti;');
 const { Batti } = globalThis;

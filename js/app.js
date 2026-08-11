@@ -1,7 +1,7 @@
 /* app.js - Soldi. Router, viste, dialog. */
 'use strict';
 
-const APP_VERSION = 'v21';
+const APP_VERSION = 'v22';
 
 /* ---------- helpers ---------- */
 const EUR = new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' });
@@ -61,13 +61,18 @@ function catColorSlots() {
   return slots;
 }
 
-// fette del donut per un filtro periodo: colori stabili, resto in "Altro"
-function donutSlices(filt) {
+// fette del donut per un filtro periodo: colori stabili, resto in "Altro".
+// flow: 'out' (uscite) o 'in' (entrate). I movimenti futuri non contano.
+function donutSlices(filt, flow = 'out') {
   const byCat = new Map();
+  const today = todayISO();
   for (const t of DB.state.tx) {
-    if (t.type !== 'out') continue;
+    if (t.type !== flow) continue;
+    if (t.date > today) continue;
     if (filt.ym && !t.date.startsWith(filt.ym)) continue;
     if (filt.y && !t.date.startsWith(filt.y)) continue;
+    if (filt.from && t.date < filt.from) continue;
+    if (filt.to && t.date > filt.to) continue;
     const k = t.category || '__none__';
     byCat.set(k, (byCat.get(k) || 0) + t.amount);
   }
@@ -90,11 +95,44 @@ function donutSlices(filt) {
 /* ---------- stato UI ---------- */
 const UI = {
   route: 'home',
-  mov: { ym: todayISO().slice(0, 7), account: null, category: null, search: '', type: null },
+  mov: { scope: 'month', anchor: todayISO(), custom: null, account: null, category: null, search: '', type: null },
   fatYear: new Date().getFullYear(),
-  stat: { ym: todayISO().slice(0, 7), scope: 'month', table: false },
+  stat: { scope: 'month', anchor: todayISO(), custom: null, flow: 'out', table: false },
+  homeFlow: 'out',
   lastAdded: null,
 };
+
+/* ---------- periodi: giorno / settimana / mese / anno / personalizzato ---------- */
+const isoD = d => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+const fmtShort = iso => { const [y, m, d] = iso.split('-').map(Number); return d + ' ' + MESI_S[m - 1].toLowerCase() + ' ' + y; };
+
+function rangeFor(scope, anchor, custom) {
+  const [y, m, d] = anchor.split('-').map(Number);
+  if (scope === 'day') return { from: anchor, to: anchor, label: d + ' ' + MESI[m - 1] + ' ' + y };
+  if (scope === 'week') {
+    const dt = new Date(y, m - 1, d);
+    const start = new Date(y, m - 1, d - ((dt.getDay() + 6) % 7)); // lunedi'
+    const end = new Date(start); end.setDate(start.getDate() + 6);
+    return { from: isoD(start), to: isoD(end), label: start.getDate() + ' ' + MESI_S[start.getMonth()].toLowerCase() + ' - ' + end.getDate() + ' ' + MESI_S[end.getMonth()].toLowerCase() };
+  }
+  if (scope === 'month') {
+    const last = new Date(y, m, 0).getDate();
+    return { from: anchor.slice(0, 7) + '-01', to: anchor.slice(0, 7) + '-' + String(last).padStart(2, '0'), label: MESI[m - 1] + ' ' + y };
+  }
+  if (scope === 'year') return { from: y + '-01-01', to: y + '-12-31', label: String(y) };
+  if (scope === 'custom' && custom?.from && custom?.to) return { from: custom.from, to: custom.to, label: fmtShort(custom.from) + ' - ' + fmtShort(custom.to) };
+  return { from: null, to: null, label: 'Tutto' };
+}
+
+function shiftAnchor(scope, anchor, dir) {
+  const [y, m, d] = anchor.split('-').map(Number);
+  const dt = new Date(y, m - 1, d);
+  if (scope === 'day') dt.setDate(d + dir);
+  else if (scope === 'week') dt.setDate(d + 7 * dir);
+  else if (scope === 'month') { dt.setDate(1); dt.setMonth(m - 1 + dir); }
+  else if (scope === 'year') dt.setFullYear(y + dir);
+  return isoD(dt);
+}
 
 /* ---------- router ---------- */
 const ROUTES = { '': 'home', '#/': 'home', '#/movimenti': 'movimenti', '#/fatture': 'fatture', '#/statistiche': 'statistiche', '#/impostazioni': 'impostazioni' };
@@ -185,7 +223,9 @@ const Views = {
     const m = DB.sums({ ym });
     const y = new Date().getFullYear();
     const daParte = DB.invoicesOfYear(y).reduce((s, t) => s + DB.invoiceCalc(t).daParte, 0);
-    const recent = DB.state.tx.slice(0, matchMedia('(min-width: 920px)').matches ? 11 : 6);
+    const today = todayISO();
+    const recent = DB.state.tx.filter(t => t.date <= today).slice(0, matchMedia('(min-width: 920px)').matches ? 11 : 6);
+    const upcoming = DB.state.tx.filter(t => t.date > today).sort((a, b) => a.date.localeCompare(b.date)).slice(0, 5);
     const noCat = DB.state.tx.filter(t => !t.category && t.type !== 'transfer').length;
 
     return `<div class="home-grid"><div class="colA">
@@ -204,21 +244,11 @@ const Views = {
       </section>
 
       <div class="tags-row" role="list">
-        ${DB.state.accounts.filter(a => !a.archived).map(a => {
-          const parent = a.linkedTo ? DB.acc(a.linkedTo) : null;
-          if (parent) {
-            const spesoMese = DB.sums({ ym, account: a.id }).out;
-            return `<button class="tag-card" role="listitem" data-acc="${a.id}">
-              <span class="t-name">${esc(a.icon)} ${esc(a.name)}</span>
-              <span class="t-amount money ${spesoMese > 0 ? 'neg' : ''}">${spesoMese > 0 ? '- ' : ''}${fmt(spesoMese)}</span>
-              <span class="t-link">questo mese · conta su ${esc(parent.name)}</span>
-            </button>`;
-          }
-          return `<button class="tag-card" role="listitem" data-acc="${a.id}">
+        ${DB.state.accounts.filter(a => !a.archived && !(a.linkedTo && DB.acc(a.linkedTo))).map(a => `
+          <button class="tag-card" role="listitem" data-acc="${a.id}">
             <span class="t-name">${esc(a.icon)} ${esc(a.name)}</span>
             <span class="t-amount money ${bal.get(a.id) < 0 ? 'neg' : ''}">${fmt(bal.get(a.id) || 0)}</span>
-          </button>`;
-        }).join('')}
+          </button>`).join('')}
       </div>
 
       <button class="setaside" data-goto="fatture">
@@ -233,10 +263,16 @@ const Views = {
       ${noCat ? `<button class="badge warn" id="fix-nocat" style="margin-top:12px;cursor:pointer;font-family:inherit">
         <svg class="ic" style="width:14px;height:14px"><use href="#i-alert"/></svg> ${noCat} movimenti senza categoria - sistemali</button>` : ''}
 
-      ${m.out > 0 ? (() => {
-        const slices = donutSlices({ ym });
-        return `<button class="chartcard" id="home-chart" style="margin-top:16px;width:100%;text-align:left;border:none;cursor:pointer;font-family:inherit">
-        <h4>Dove vanno questo mese</h4>
+      ${(m.out > 0 || m.in > 0) ? (() => {
+        const slices = donutSlices({ ym }, UI.homeFlow);
+        return `<div class="chartcard" id="home-chart" style="margin-top:16px;cursor:pointer">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px">
+          <h4>${UI.homeFlow === 'out' ? 'Dove vanno questo mese' : 'Da dove arrivano questo mese'}</h4>
+          <div class="segment" style="flex:0 0 auto;padding:3px">
+            <button type="button" data-hflow="out" data-t="out" aria-pressed="${UI.homeFlow === 'out'}" style="padding:6px 12px">Uscite</button>
+            <button type="button" data-hflow="in" data-t="in" aria-pressed="${UI.homeFlow === 'in'}" style="padding:6px 12px">Entrate</button>
+          </div>
+        </div>
         <div class="c-sub">${MESI[+ym.slice(5) - 1]} · tocca per tutte le statistiche</div>
         <div id="home-donut"></div>
         <div class="legend">
@@ -246,9 +282,13 @@ const Views = {
             <span class="lg-val money">${fmt(s2.value)}</span>
           </span>`).join('')}
         </div>
-      </button>`;
+      </div>`;
       })() : ''}
       </div><div class="colB">
+
+      ${upcoming.length ? `
+      <h3 class="rule">In arrivo</h3>
+      <ul class="txlist">${upcoming.map(t => Views.txRow(t)).join('')}</ul>` : ''}
 
       <h3 class="rule">Ultimi movimenti</h3>
       <ul class="txlist">${recent.length ? recent.map(t => Views.txRow(t)).join('') : `
@@ -266,19 +306,27 @@ const Views = {
   },
   bindHome(root) {
     $$('.tag-card', root).forEach(b => b.addEventListener('click', () => {
-      UI.mov = { ym: null, account: b.dataset.acc, category: null, search: '', type: null };
+      UI.mov = { scope: 'all', anchor: todayISO(), custom: null, account: b.dataset.acc, category: null, search: '', type: null };
       location.hash = '#/movimenti';
     }));
     $('[data-goto="fatture"]', root).addEventListener('click', () => location.hash = '#/fatture');
     const fx = $('#fix-nocat', root);
-    if (fx) fx.addEventListener('click', () => { UI.mov = { ym: null, account: null, category: '__none__', search: '', type: null }; location.hash = '#/movimenti'; });
+    if (fx) fx.addEventListener('click', () => { UI.mov = { scope: 'all', anchor: todayISO(), custom: null, account: null, category: '__none__', search: '', type: null }; location.hash = '#/movimenti'; });
     const hc = $('#home-chart', root);
     if (hc) {
       const ym = todayISO().slice(0, 7);
-      const slices = donutSlices({ ym });
+      const slices = donutSlices({ ym }, UI.homeFlow);
       const tot = slices.reduce((s, x) => s + x.value, 0);
-      if (tot) Charts.donut($('#home-donut', root), slices, { centerLabel: 'Uscite', centerValue: fmt(tot), fmt });
-      hc.addEventListener('click', () => { UI.stat = { ym, scope: 'month', table: false }; location.hash = '#/statistiche'; });
+      if (tot) Charts.donut($('#home-donut', root), slices, { centerLabel: UI.homeFlow === 'out' ? 'Uscite' : 'Entrate', centerValue: fmt(tot), fmt });
+      $$('[data-hflow]', hc).forEach(b => b.addEventListener('click', e => {
+        e.stopPropagation();
+        UI.homeFlow = b.dataset.hflow;
+        render();
+      }));
+      hc.addEventListener('click', () => {
+        UI.stat = { scope: 'month', anchor: todayISO(), custom: null, flow: UI.homeFlow, table: false };
+        location.hash = '#/statistiche';
+      });
     }
     $$('.txrow', root).forEach(r => r.addEventListener('click', () => Dialogs.txForm(DB.state.tx.find(t => t.id === r.dataset.id))));
 
@@ -330,7 +378,8 @@ const Views = {
       ? `${a ? esc(a.name) : 'Origine sconosciuta'} → ${b ? esc(b.name) : '?'}`
       : [c ? esc(c.name) : 'Senza categoria', a ? esc(a.name) : 'Senza conto'].join(' · ');
     const sub = (noDate ? [] : [fmtDate(t.date, t.dayUnknown)]).concat(where).join(' · ');
-    return `<li><button class="txrow ${UI.lastAdded === t.id ? 'is-new' : ''}" data-id="${t.id}">
+    const future = t.date > todayISO();
+    return `<li><button class="txrow ${UI.lastAdded === t.id ? 'is-new' : ''} ${future ? 'future' : ''}" data-id="${t.id}">
       <span class="t-emoji" aria-hidden="true" style="${catDisc(t.category)}">${icon}</span>
       <span class="t-main">
         <span class="t-desc">${esc(t.desc)}${t.invoice ? ' <span class="badge" style="font-size:.62rem;padding:1px 7px">FATTURA</span>' : ''}${t.recur ? ' <span class="badge" style="font-size:.62rem;padding:1px 7px">🔁 ' + (t.recur === 'monthly' ? 'OGNI MESE' : 'OGNI ANNO') + '</span>' : ''}</span>
@@ -343,8 +392,11 @@ const Views = {
   /* ===== movimenti ===== */
   movimenti() {
     const f = UI.mov;
+    const range = rangeFor(f.scope, f.anchor, f.custom);
+    const today = todayISO();
     let list = DB.state.tx.filter(t => {
-      if (f.ym && !t.date.startsWith(f.ym)) return false;
+      if (range.from && t.date < range.from) return false;
+      if (range.to && t.date > range.to) return false;
       if (f.account && t.account !== f.account && t.toAccount !== f.account) return false;
       if (f.category === '__none__') { if (t.category || t.type === 'transfer') return false; }
       else if (f.category && t.category !== f.category) return false;
@@ -355,8 +407,9 @@ const Views = {
       }
       return true;
     });
-    const tin = list.filter(t => t.type === 'in').reduce((s, t) => s + t.amount, 0);
-    const tout = list.filter(t => t.type === 'out').reduce((s, t) => s + t.amount, 0);
+    const tin = list.filter(t => t.type === 'in' && t.date <= today).reduce((s, t) => s + t.amount, 0);
+    const tout = list.filter(t => t.type === 'out' && t.date <= today).reduce((s, t) => s + t.amount, 0);
+    const nFuturi = list.filter(t => t.date > today).length;
 
     // raggruppa per giorno
     const groups = [];
@@ -367,19 +420,22 @@ const Views = {
       cur.items.push(t);
     }
 
-    const [yy, mm] = (f.ym || todayISO().slice(0, 7)).split('-').map(Number);
-    const periodLabel = f.ym ? `${MESI[mm - 1]} ${yy}` : 'Tutto';
+    const hasNav = ['day', 'week', 'month', 'year'].includes(f.scope);
 
     return `
       <h2 class="viewtitle">Movimenti</h2>
       <div class="subtitle">${list.length} moviment${list.length === 1 ? 'o' : 'i'} ·
-        <span class="pos money">+${fmt(tin)}</span> · <span class="neg money">-${fmt(tout)}</span></div>
+        <span class="pos money">+${fmt(tin)}</span> · <span class="neg money">-${fmt(tout)}</span>${nFuturi ? ' · ' + nFuturi + ' in arrivo' : ''}</div>
 
       <div class="periodnav">
-        <button class="iconbtn" id="m-prev" aria-label="Mese precedente" ${f.ym ? '' : 'disabled'}><svg class="ic"><use href="#i-left"/></svg></button>
-        <span class="p-label">${periodLabel}</span>
-        <button class="iconbtn" id="m-next" aria-label="Mese successivo" ${f.ym ? '' : 'disabled'}><svg class="ic"><use href="#i-right"/></svg></button>
-        <button class="chip" id="m-all" aria-pressed="${!f.ym}">Tutto</button>
+        <button class="iconbtn" id="m-prev" aria-label="Periodo precedente" ${hasNav ? '' : 'disabled'}><svg class="ic"><use href="#i-left"/></svg></button>
+        <span class="p-label">${range.label}</span>
+        <button class="iconbtn" id="m-next" aria-label="Periodo successivo" ${hasNav ? '' : 'disabled'}><svg class="ic"><use href="#i-right"/></svg></button>
+      </div>
+      <div class="chip-row scroll">
+        ${[['day', 'Giorno'], ['week', 'Settimana'], ['month', 'Mese'], ['all', 'Tutto']].map(([s2, l]) =>
+          `<button class="chip" data-scope="${s2}" aria-pressed="${f.scope === s2}">${l}</button>`).join('')}
+        <button class="chip" data-scope="custom" aria-pressed="${f.scope === 'custom'}">Date…</button>
       </div>
 
       <div class="chip-row scroll">
@@ -405,15 +461,14 @@ const Views = {
       </ul>`;
   },
   bindMovimenti(root) {
-    const shift = dir => {
-      const [y, m] = UI.mov.ym.split('-').map(Number);
-      const d = new Date(y, m - 1 + dir, 1);
-      UI.mov.ym = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
-      render();
-    };
-    $('#m-prev', root).addEventListener('click', () => shift(-1));
-    $('#m-next', root).addEventListener('click', () => shift(1));
-    $('#m-all', root).addEventListener('click', () => { UI.mov.ym = UI.mov.ym ? null : todayISO().slice(0, 7); render(); });
+    const f = UI.mov;
+    $('#m-prev', root).addEventListener('click', () => { f.anchor = shiftAnchor(f.scope, f.anchor, -1); render(); });
+    $('#m-next', root).addEventListener('click', () => { f.anchor = shiftAnchor(f.scope, f.anchor, 1); render(); });
+    $$('[data-scope]', root).forEach(b => b.addEventListener('click', () => {
+      const s2 = b.dataset.scope;
+      if (s2 === 'custom') { Dialogs.rangePicker(f.custom, (from, to) => { f.scope = 'custom'; f.custom = { from, to }; render(); }); return; }
+      f.scope = s2; f.anchor = todayISO(); render();
+    }));
     $$('[data-facc]', root).forEach(b => b.addEventListener('click', () => {
       UI.mov.account = UI.mov.account === b.dataset.facc ? null : b.dataset.facc; render();
     }));
@@ -509,46 +564,57 @@ const Views = {
   /* ===== statistiche ===== */
   statistiche() {
     const st = UI.stat;
-    const [y, m] = st.ym.split('-').map(Number);
-    const filt = st.scope === 'month' ? { ym: st.ym } : { y: String(y) };
-    const periodLabel = st.scope === 'month' ? `${MESI[m - 1]} ${y}` : String(y);
+    const y = +st.anchor.slice(0, 4);
+    const range = rangeFor(st.scope, st.anchor, st.custom);
+    const filt = { from: range.from, to: range.to };
+    const flowLabel = st.flow === 'out' ? 'Uscite' : 'Entrate';
 
-    // spese per categoria (colori stabili per categoria)
-    const slices = donutSlices(filt);
-    const totOut = slices.reduce((s, x) => s + x.value, 0);
+    const slices = donutSlices(filt, st.flow);
+    const tot = slices.reduce((s, x) => s + x.value, 0);
 
-    // barre dell'anno
+    // barre dell'anno dell'ancora
     const months = MESI_S.map((lbl, i) => {
       const ym = y + '-' + String(i + 1).padStart(2, '0');
       const s = DB.sums({ ym });
       return { label: lbl, in: s.in, out: s.out };
     });
     const ytot = DB.sums({ y: String(y) });
+    const hasNav = ['day', 'week', 'month', 'year'].includes(st.scope);
 
     return `
       <h2 class="viewtitle">Statistiche</h2>
-      <div class="subtitle">Come si muovono i soldi</div>
+      <div class="subtitle">Come si muovono i soldi (contando fino a oggi)</div>
 
       <div class="periodnav">
-        <button class="iconbtn" id="s-prev" aria-label="Periodo precedente"><svg class="ic"><use href="#i-left"/></svg></button>
-        <span class="p-label">${periodLabel}</span>
-        <button class="iconbtn" id="s-next" aria-label="Periodo successivo"><svg class="ic"><use href="#i-right"/></svg></button>
-        <button class="chip" id="s-scope" aria-pressed="${st.scope === 'year'}">Anno intero</button>
+        <button class="iconbtn" id="s-prev" aria-label="Periodo precedente" ${hasNav ? '' : 'disabled'}><svg class="ic"><use href="#i-left"/></svg></button>
+        <span class="p-label">${range.label}</span>
+        <button class="iconbtn" id="s-next" aria-label="Periodo successivo" ${hasNav ? '' : 'disabled'}><svg class="ic"><use href="#i-right"/></svg></button>
+      </div>
+      <div class="chip-row scroll">
+        ${[['day', 'Giorno'], ['week', 'Settimana'], ['month', 'Mese'], ['year', 'Anno']].map(([s2, l]) =>
+          `<button class="chip" data-sscope="${s2}" aria-pressed="${st.scope === s2}">${l}</button>`).join('')}
+        <button class="chip" data-sscope="custom" aria-pressed="${st.scope === 'custom'}">Date…</button>
         <button class="chip" id="s-table" aria-pressed="${st.table}">Tabella</button>
       </div>
 
       <div class="stats-grid">
       <div class="chartcard">
-        <h4>Dove vanno (uscite per categoria)</h4>
-        <div class="c-sub">${periodLabel} · totale <strong class="money">${fmt(totOut)}</strong></div>
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px">
+          <h4>${st.flow === 'out' ? 'Dove vanno' : 'Da dove arrivano'} (per categoria)</h4>
+          <div class="segment" style="flex:0 0 auto;padding:3px">
+            <button type="button" data-flow="out" data-t="out" aria-pressed="${st.flow === 'out'}" style="padding:6px 12px">Uscite</button>
+            <button type="button" data-flow="in" data-t="in" aria-pressed="${st.flow === 'in'}" style="padding:6px 12px">Entrate</button>
+          </div>
+        </div>
+        <div class="c-sub">${range.label} · totale <strong class="money">${fmt(tot)}</strong></div>
         <div id="donut"></div>
-        ${totOut === 0 ? '<div class="empty" style="padding:18px">Nessuna uscita nel periodo.</div>' : `
+        ${tot === 0 ? `<div class="empty" style="padding:18px">Nessuna ${flowLabel.toLowerCase().slice(0, -1)}a nel periodo.</div>` : `
         <div class="legend" role="list">
           ${slices.map(s2 => `<button class="lg-row" role="listitem" data-cat="${s2.id}">
             <span class="swatch" style="background:${s2.color}"></span>
             <span class="lg-name">${esc(s2.label)}</span>
             <span class="lg-val money">${fmt(s2.value)}</span>
-            <span class="lg-pct money">${Math.round(s2.value / totOut * 100)}%</span>
+            <span class="lg-pct money">${Math.round(s2.value / tot * 100)}%</span>
           </button>`).join('')}
         </div>`}
       </div>
@@ -562,11 +628,11 @@ const Views = {
       </div>
 
       ${st.table ? `
-      <h3 class="rule">Tabella · ${periodLabel}</h3>
+      <h3 class="rule">Tabella · ${range.label}</h3>
       <div class="tablewrap"><table class="sheet">
-        <thead><tr><th scope="col">Categoria</th><th scope="col">Uscite</th><th scope="col">Quota</th></tr></thead>
-        <tbody>${slices.map(s2 => `<tr><td>${esc(s2.label)}</td><td class="money">${fmt(s2.value)}</td><td class="money">${totOut ? Math.round(s2.value / totOut * 100) : 0}%</td></tr>`).join('')}</tbody>
-        <tfoot><tr><td>Totale</td><td class="money">${fmt(totOut)}</td><td></td></tr></tfoot>
+        <thead><tr><th scope="col">Categoria</th><th scope="col">${flowLabel}</th><th scope="col">Quota</th></tr></thead>
+        <tbody>${slices.map(s2 => `<tr><td>${esc(s2.label)}</td><td class="money">${fmt(s2.value)}</td><td class="money">${tot ? Math.round(s2.value / tot * 100) : 0}%</td></tr>`).join('')}</tbody>
+        <tfoot><tr><td>Totale</td><td class="money">${fmt(tot)}</td><td></td></tr></tfoot>
       </table></div>
       <div class="tablewrap" style="margin-top:12px"><table class="sheet">
         <thead><tr><th scope="col">Mese</th><th scope="col">Entrate</th><th scope="col">Uscite</th><th scope="col">Saldo</th></tr></thead>
@@ -575,35 +641,28 @@ const Views = {
   },
   bindStatistiche(root) {
     const st = UI.stat;
-    const shift = dir => {
-      if (st.scope === 'month') {
-        const [y, m] = st.ym.split('-').map(Number);
-        const d = new Date(y, m - 1 + dir, 1);
-        st.ym = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
-      } else {
-        const [y] = st.ym.split('-').map(Number);
-        st.ym = (y + dir) + st.ym.slice(4);
-      }
-      render();
-    };
-    $('#s-prev', root).addEventListener('click', () => shift(-1));
-    $('#s-next', root).addEventListener('click', () => shift(1));
-    $('#s-scope', root).addEventListener('click', () => { st.scope = st.scope === 'month' ? 'year' : 'month'; render(); });
+    $('#s-prev', root).addEventListener('click', () => { st.anchor = shiftAnchor(st.scope, st.anchor, -1); render(); });
+    $('#s-next', root).addEventListener('click', () => { st.anchor = shiftAnchor(st.scope, st.anchor, 1); render(); });
+    $$('[data-sscope]', root).forEach(b => b.addEventListener('click', () => {
+      const s2 = b.dataset.sscope;
+      if (s2 === 'custom') { Dialogs.rangePicker(st.custom, (from, to) => { st.scope = 'custom'; st.custom = { from, to }; render(); }); return; }
+      st.scope = s2; st.anchor = todayISO(); render();
+    }));
+    $$('[data-flow]', root).forEach(b => b.addEventListener('click', () => { st.flow = b.dataset.flow; render(); }));
     $('#s-table', root).addEventListener('click', () => { st.table = !st.table; render(); });
 
     // grafici
-    const [y, m] = st.ym.split('-').map(Number);
+    const y = +st.anchor.slice(0, 4);
+    const range = rangeFor(st.scope, st.anchor, st.custom);
     const donutEl = $('#donut', root);
-    const legendRows = $$('.lg-row', root);
-    const filt = st.scope === 'month' ? { ym: st.ym } : { y: String(y) };
-    const real = donutSlices(filt);
-    const totOut = real.reduce((s, x) => s + x.value, 0);
-    if (donutEl && totOut) Charts.donut(donutEl, real, { centerLabel: 'Uscite', centerValue: fmt(totOut), fmt });
+    const real = donutSlices({ from: range.from, to: range.to }, st.flow);
+    const tot = real.reduce((s, x) => s + x.value, 0);
+    if (donutEl && tot) Charts.donut(donutEl, real, { centerLabel: st.flow === 'out' ? 'Uscite' : 'Entrate', centerValue: fmt(tot), fmt });
 
-    legendRows.forEach(r => r.addEventListener('click', () => {
+    $$('.lg-row', root).forEach(r => r.addEventListener('click', () => {
       const id = r.dataset.cat;
       if (id === '__other__') return;
-      UI.mov = { ym: st.scope === 'month' ? st.ym : null, account: null, category: id === '__none__' ? '__none__' : id, search: '', type: 'out' };
+      UI.mov = { scope: st.scope, anchor: st.anchor, custom: st.custom, account: null, category: id === '__none__' ? '__none__' : id, search: '', type: st.flow };
       location.hash = '#/movimenti';
     }));
 
@@ -614,7 +673,7 @@ const Views = {
     });
     Charts.bars($('#barchart', root), months, {
       fmt,
-      onBarClick: i => { st.scope = 'month'; st.ym = y + '-' + String(i + 1).padStart(2, '0'); render(); },
+      onBarClick: i => { st.scope = 'month'; st.anchor = y + '-' + String(i + 1).padStart(2, '0') + '-01'; render(); },
     });
   },
 
@@ -1184,6 +1243,29 @@ const Dialogs = {
       c.archived = true;
       await DB.saveCategories();
       dlg.close(); toast('Categoria archiviata (i movimenti restano)'); render();
+    });
+  },
+
+  /* --- periodo personalizzato: da / a --- */
+  rangePicker(current, onOk) {
+    const dlg = Dialogs.open(`
+      <div class="dlg-head"><h2>Periodo personalizzato</h2><button class="iconbtn dlg-close" aria-label="Chiudi"><svg class="ic"><use href="#i-x"/></svg></button></div>
+      <div class="dlg-body">
+        <div class="frow">
+          <div class="field"><label for="rp-from">Dal</label><input id="rp-from" type="date" value="${esc(current?.from || todayISO().slice(0, 8) + '01')}"></div>
+          <div class="field"><label for="rp-to">Al</label><input id="rp-to" type="date" value="${esc(current?.to || todayISO())}"></div>
+        </div>
+      </div>
+      <div class="dlg-foot">
+        <button class="btn dlg-close">Annulla</button>
+        <button class="btn primary" id="rp-ok">Applica</button>
+      </div>`);
+    $('#rp-ok', dlg).addEventListener('click', () => {
+      let from = $('#rp-from', dlg).value, to = $('#rp-to', dlg).value;
+      if (!from || !to) { toast('Scegli entrambe le date.'); return; }
+      if (from > to) [from, to] = [to, from];
+      dlg.close();
+      onOk(from, to);
     });
   },
 
