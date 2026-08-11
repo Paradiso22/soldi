@@ -1,7 +1,7 @@
 /* app.js - Soldi. Router, viste, dialog. */
 'use strict';
 
-const APP_VERSION = 'v23';
+const APP_VERSION = 'v25';
 
 /* ---------- helpers ---------- */
 const EUR = new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' });
@@ -26,6 +26,7 @@ async function hardRefresh(nukeSw) {
     }
     for (const k of await caches.keys()) await caches.delete(k);
   } catch { /* si prova comunque */ }
+  // la query unica scavalca sia la cache del browser sia quella della CDN
   location.href = location.pathname + '?r=' + Date.now() + location.hash;
 }
 
@@ -1441,19 +1442,23 @@ const Dialogs = {
   Sync.onChange(() => { if (UI.route === 'impostazioni') render(); });
   Batti.boot();
 
-  // anti-cache: se online esiste una versione piu' nuova, ripulisci e ricarica da solo
-  async function checkForUpdate() {
+  // anti-cache: se online esiste una versione piu' nuova, ripulisci e ricarica da solo.
+  // La query unica e' essenziale: la CDN di GitHub Pages tiene i file fino a ~10 minuti
+  // e con l'URL nudo servirebbe la versione vecchia anche a cache locale pulita.
+  async function checkForUpdate(manual) {
     try {
-      const txt = await (await fetch('sw.js', { cache: 'no-store' })).text();
+      const txt = await (await fetch('sw.js?t=' + Date.now(), { cache: 'no-store' })).text();
       const m = txt.match(/soldi-(v\d+)/);
-      if (m && m[1] !== APP_VERSION) {
-        const k = 'upd-' + m[1];
-        if (Date.now() - (+sessionStorage.getItem(k) || 0) < 60000) return; // riprova al massimo ogni minuto
-        sessionStorage.setItem(k, String(Date.now()));
-        await hardRefresh(false);
-      }
-    } catch { /* offline: pazienza */ }
+      if (!m) return;
+      if (m[1] === APP_VERSION) { if (manual) toast('Sei già all\'ultima versione (' + APP_VERSION + ')'); return; }
+      const k = 'upd-' + m[1];
+      if (!manual && Date.now() - (+sessionStorage.getItem(k) || 0) < 60000) return; // riprova al massimo ogni minuto
+      sessionStorage.setItem(k, String(Date.now()));
+      toast('Installo la versione ' + m[1] + '…');
+      await hardRefresh(false);
+    } catch { if (manual) toast('Nessuna rete: riprovo più tardi.'); }
   }
+  window.checkForUpdate = checkForUpdate;
   checkForUpdate();
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { checkForUpdate(); } });
 

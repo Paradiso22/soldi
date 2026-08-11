@@ -29,6 +29,17 @@ L'installazione su Android richiede HTTPS, quindi serve un hosting statico gratu
 Impostazioni → Riconoscimento foto: incolla una API key gratuita di Google Gemini
 (https://aistudio.google.com/apikey - piano free, non serve carta). La chiave resta sul dispositivo; le foto vengono inviate a Google solo quando usi la funzione.
 
+## Pubblicare una nuova versione
+
+```bash
+node tools/release.mjs && node test/test.mjs && git add -A && git commit -m "descrizione" && git push
+```
+
+`release.mjs` alza la versione **in tutti i punti insieme** (APP_VERSION, cache del
+service worker, `?v=` sugli URL di css/js): sono URL nuovi a ogni release, quindi
+né il browser né la CDN di GitHub Pages possono servire file vecchi. L'app controlla
+da sola a ogni apertura se esiste una versione più recente e si aggiorna, dicendolo.
+
 ## Struttura
 
 - `index.html`, `css/app.css` - interfaccia (design "giocoso italiano")

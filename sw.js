@@ -1,19 +1,19 @@
 /* sw.js - offline first */
 'use strict';
 
-const VERSION = 'soldi-v23';
+const VERSION = 'soldi-v25';
 const ASSETS = [
   './',
   'index.html',
-  'css/app.css',
-  'js/db.js',
-  'js/parser.js',
-  'js/charts.js',
-  'js/backup.js',
-  'js/sync.js',
-  'js/batti.js',
-  'js/lock.js',
-  'js/app.js',
+  'css/app.css?v=25',
+  'js/db.js?v=25',
+  'js/parser.js?v=25',
+  'js/charts.js?v=25',
+  'js/backup.js?v=25',
+  'js/sync.js?v=25',
+  'js/batti.js?v=25',
+  'js/lock.js?v=25',
+  'js/app.js?v=25',
   'fonts/baloo2-latin.woff2',
   'fonts/nunito-latin.woff2',
   'manifest.webmanifest',
@@ -37,8 +37,11 @@ self.addEventListener('activate', e => {
 self.addEventListener('fetch', e => {
   const url = new URL(e.request.url);
   if (e.request.method !== 'GET' || url.origin !== location.origin) return; // Gemini & co: rete diretta
-  // prima la rete (aggiornamenti immediati a ogni apertura), cache solo se offline
-  const fromNet = () => fetch(e.request).then(res => {
+  // Prima la rete (aggiornamenti immediati a ogni apertura), cache solo se offline.
+  // cache:'reload' scavalca la cache HTTP del browser: GitHub Pages dichiara l'HTML
+  // valido 10 minuti, e senza questo il browser serviva la versione vecchia anche
+  // dopo aver cancellato i dati del sito.
+  const fromNet = () => fetch(e.request.url, { cache: 'reload', credentials: 'same-origin' }).then(res => {
     if (res.ok) {
       const clone = res.clone();
       caches.open(VERSION).then(c => c.put(e.request, clone));
