@@ -1,7 +1,7 @@
 /* app.js - Soldi. Router, viste, dialog. */
 'use strict';
 
-const APP_VERSION = 'v25';
+const APP_VERSION = 'v26';
 
 /* ---------- helpers ---------- */
 const EUR = new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' });
@@ -795,6 +795,25 @@ const Views = {
       </div>`;
       })()}
 
+      <div class="setcard">
+        <h4>Password d'ingresso</h4>
+        ${Gate.configured() ? `
+        <div class="s-desc">Attiva ✓ - chi apre l'indirizzo dell'app deve inserire la password. Su ogni dispositivo viene chiesta una volta sola, poi resta ricordata.</div>
+        <button class="btn" id="gate-forget">Dimentica su questo dispositivo</button>`
+        : `
+        <div class="s-desc">L'indirizzo dell'app è pubblico: con una password d'ingresso solo chi la conosce può usarla. Scegline una <strong>robusta e non usata altrove</strong> (il controllo vive nel codice pubblico). La password non esce da questo dispositivo: si genera solo un codice di verifica da consegnare a Claude.</div>
+        <div class="frow">
+          <input type="password" id="gate-new" placeholder="Nuova password" autocomplete="new-password">
+          <input type="password" id="gate-new2" placeholder="Ripeti" autocomplete="new-password">
+        </div>
+        <button class="btn primary" id="gate-make" style="margin-top:10px">Genera codice di verifica</button>
+        <div id="gate-out" hidden style="margin-top:12px">
+          <div class="s-desc" style="margin-bottom:6px">Copia questa riga e incollala a Claude (non contiene la password):</div>
+          <textarea id="gate-json" readonly rows="3" style="font-size:.76rem;font-family:ui-monospace,monospace"></textarea>
+          <button class="btn" id="gate-copy" style="margin-top:8px">Copia</button>
+        </div>`}
+      </div>
+
       ${AppLock.isSupported() || AppLock.enabled() ? `
       <div class="setcard">
         <h4>Blocco app</h4>
@@ -903,6 +922,32 @@ const Views = {
       e.target.value = '';
     });
     $('#bk-csv', root).addEventListener('click', () => { Backup.exportCSV(); toast('CSV esportato ✓'); });
+
+    const gm = $('#gate-make', root);
+    if (gm) gm.addEventListener('click', async () => {
+      const pw = $('#gate-new', root).value, pw2 = $('#gate-new2', root).value;
+      if (pw.length < 8) { toast('Minimo 8 caratteri: il verificatore è pubblico.'); return; }
+      if (pw !== pw2) { toast('Le due password non coincidono.'); return; }
+      gm.disabled = true; gm.textContent = 'Calcolo…';
+      const v = await Gate.makeVerifier(pw);
+      $('#gate-json', root).value = `const V = { salt: '${v.salt}', hash: '${v.hash}' };`;
+      $('#gate-out', root).hidden = false;
+      gm.disabled = false; gm.textContent = 'Genera di nuovo';
+      toast('Codice pronto: incollalo a Claude ✓');
+    });
+    const gc = $('#gate-copy', root);
+    if (gc) gc.addEventListener('click', async () => {
+      const t = $('#gate-json', root);
+      try { await navigator.clipboard.writeText(t.value); toast('Copiato ✓'); }
+      catch { t.select(); toast('Selezionato: copia con Ctrl+C'); }
+    });
+    const gf = $('#gate-forget', root);
+    if (gf) gf.addEventListener('click', () => Dialogs.confirm(
+      'Dimenticare la password qui?',
+      'Alla prossima apertura su questo dispositivo la password verrà richiesta di nuovo.',
+      'Dimentica',
+      async () => { Gate.forget(); toast('Verrà richiesta alla prossima apertura'); }
+    ));
 
     const lt = $('#lock-toggle', root);
     if (lt) lt.addEventListener('click', async () => {
@@ -1391,6 +1436,9 @@ const Dialogs = {
 
 /* ---------- avvio ---------- */
 (async function boot() {
+  // password d'ingresso: senza, l'app non parte nemmeno (dati mai caricati)
+  await Gate.boot();
+
   // subito: se il blocco e' attivo, lo schermo si copre prima dei dati;
   // finito il rilevamento, aggiorna le impostazioni se sono in vista
   AppLock.boot().then(() => { if (UI.route === 'impostazioni') render(); });
