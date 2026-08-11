@@ -1,5 +1,7 @@
-/* app.js - Soldi, la lavagna. Router, viste, dialog. */
+/* app.js - Soldi. Router, viste, dialog. */
 'use strict';
+
+const APP_VERSION = 'v9';
 
 /* ---------- helpers ---------- */
 const EUR = new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' });
@@ -218,6 +220,7 @@ const Views = {
         <button type="button" class="iconbtn" id="quickphoto" aria-label="Foto scontrino"><svg class="ic"><use href="#i-camera"/></svg></button>
         <button type="submit" class="iconbtn primary" aria-label="Aggiungi"><svg class="ic"><use href="#i-send"/></svg></button>
       </form>
+      <div class="mut" style="font-size:.68rem;text-align:center;padding:10px 0 2px">Soldi ${APP_VERSION}</div>
       </div></div>`;
   },
   bindHome(root) {
@@ -629,7 +632,7 @@ const Views = {
         <button class="btn danger" id="wipe">Cancella tutto</button>
       </div>
 
-      <p class="mut" style="font-size:.76rem;padding:4px 2px 20px">Soldi non ha server: i dati vivono in questo browser (IndexedDB), i backup sono cifrati AES-256. Versione 1.0</p>`;
+      <p class="mut" style="font-size:.76rem;padding:4px 2px 20px">Soldi non ha server: i dati vivono in questo browser (IndexedDB), i backup sono cifrati AES-256. Versione ${APP_VERSION}</p>`;
   },
   bindImpostazioni(root) {
     $$('[data-accedit]', root).forEach(b => b.addEventListener('click', () => Dialogs.accountForm(DB.acc(b.dataset.accedit))));
@@ -1088,12 +1091,22 @@ const Dialogs = {
   $('#app').hidden = false;
   window.addEventListener('hashchange', navigate);
   $('#btn-add').addEventListener('click', () => Dialogs.txForm(null));
-  $('#btn-settings').addEventListener('click', () => { location.hash = '#/impostazioni'; });
+  // delega sul documento: il bottone impostazioni funziona anche se il boot parziale fallisse
+  document.addEventListener('click', e => {
+    if (e.target.closest && e.target.closest('#btn-settings')) location.hash = '#/impostazioni';
+  });
   navigate();
   Sync.boot();
   Sync.onChange(() => { if (UI.route === 'impostazioni') render(); });
 
   if ('serviceWorker' in navigator && location.protocol !== 'file:') {
     navigator.serviceWorker.register('sw.js').catch(() => {});
+    // quando una nuova versione prende il controllo, ricarica una volta sola:
+    // gli aggiornamenti arrivano alla prima riapertura invece che alla seconda
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (sessionStorage.getItem('sw-reloaded')) return;
+      sessionStorage.setItem('sw-reloaded', '1');
+      location.reload();
+    });
   }
 })();
