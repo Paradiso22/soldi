@@ -12,7 +12,7 @@ const Gate = (() => {
   const ITER = 310000;
 
   // null = nessuna protezione (l'app si apre e mostra il setup nelle impostazioni)
-  const V = null;
+  const V = { salt: 'a0a65c294d3c165cb6f0cda3c411b686', hash: '48e8f6c3eaeea1696b265342039a072377c3bbbf865dba9d4a76098c188fe1e0' };
 
   const hex = b => [...new Uint8Array(b)].map(x => x.toString(16).padStart(2, '0')).join('');
   const unhex = s => Uint8Array.from(s.match(/../g).map(h => parseInt(h, 16)));
