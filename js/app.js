@@ -1,7 +1,7 @@
 /* app.js - Soldi. Router, viste, dialog. */
 'use strict';
 
-const APP_VERSION = 'v13';
+const APP_VERSION = 'v14';
 
 /* ---------- helpers ---------- */
 const EUR = new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' });
@@ -1171,6 +1171,24 @@ const Dialogs = {
   navigate();
   Sync.boot();
   Sync.onChange(() => { if (UI.route === 'impostazioni') render(); });
+
+  // anti-cache: se online esiste una versione piu' nuova, ripulisci e ricarica da solo
+  async function checkForUpdate() {
+    try {
+      const txt = await (await fetch('sw.js', { cache: 'no-store' })).text();
+      const m = txt.match(/soldi-(v\d+)/);
+      if (m && m[1] !== APP_VERSION) {
+        if (sessionStorage.getItem('upd-' + m[1])) return;
+        sessionStorage.setItem('upd-' + m[1], '1');
+        const regs = await navigator.serviceWorker.getRegistrations();
+        for (const r of regs) await r.update();
+        for (const k of await caches.keys()) await caches.delete(k);
+        location.reload();
+      }
+    } catch { /* offline: pazienza */ }
+  }
+  checkForUpdate();
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') checkForUpdate(); });
 
   if ('serviceWorker' in navigator && location.protocol !== 'file:') {
     navigator.serviceWorker.register('sw.js').catch(() => {});
