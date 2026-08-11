@@ -1,7 +1,7 @@
 /* sw.js - offline first */
 'use strict';
 
-const VERSION = 'soldi-v19';
+const VERSION = 'soldi-v20';
 const ASSETS = [
   './',
   'index.html',
@@ -11,6 +11,7 @@ const ASSETS = [
   'js/charts.js',
   'js/backup.js',
   'js/sync.js',
+  'js/batti.js',
   'js/app.js',
   'fonts/baloo2-latin.woff2',
   'fonts/nunito-latin.woff2',

@@ -1,7 +1,7 @@
 /* app.js - Soldi. Router, viste, dialog. */
 'use strict';
 
-const APP_VERSION = 'v19';
+const APP_VERSION = 'v20';
 
 /* ---------- helpers ---------- */
 const EUR = new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' });
@@ -692,6 +692,22 @@ const Views = {
       </div>
 
       <div class="setcard">
+        <h4>Batti - spese condivise</h4>
+        ${Batti.enabled() ? `
+        <div class="s-desc">Collegata al gruppo <strong>${esc(s.batti.groupName || '')}</strong> come <strong>${esc(s.batti.memberName || '')}</strong>: le spese che paghi tu arrivano da sole${DB.acc(s.batti.account) ? ' sul conto ' + esc(DB.acc(s.batti.account).name) : ''}, con la nota "Importata automaticamente da Batti".
+        ${s.batti.lastImport ? ' Ultimo controllo: ' + new Date(s.batti.lastImport).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' }) + '.' : ''}</div>
+        <div class="chip-row" style="margin:0">
+          <button class="btn primary" id="bt-now">Importa ora</button>
+          <button class="btn" id="bt-off">Scollega</button>
+        </div>` : `
+        <div class="s-desc">Collega il tuo gruppo di Batti: ogni spesa che paghi tu lì viene registrata da sola anche qui (da oggi in poi), con nota automatica. Incolla il link d'invito o il codice del gruppo.</div>
+        <div class="frow">
+          <input type="text" id="bt-code" placeholder="Link o codice del gruppo Batti" autocomplete="off">
+          <button class="btn primary" id="bt-on" style="flex:0 0 auto">Collega</button>
+        </div>`}
+      </div>
+
+      <div class="setcard">
         <h4>Backup e dati</h4>
         <div class="s-desc">Il backup è un file cifrato con una password che scegli tu: salvalo dove vuoi, ad esempio sul tuo Google Drive. Senza password nessuno lo apre.</div>
         <div class="chip-row" style="margin:0">
@@ -786,6 +802,29 @@ const Views = {
       'Scollega',
       async () => { await Sync.disconnect(); toast('Sincronizzazione scollegata'); render(); }
     ));
+
+    const btOn = $('#bt-on', root);
+    if (btOn) btOn.addEventListener('click', () => {
+      const gid = Batti.parseGroupId($('#bt-code', root).value);
+      if (!gid) { toast('Incolla il link o il codice del gruppo.'); return; }
+      toast('Cerco il gruppo…');
+      Batti.fetchMeta(gid)
+        .then(meta => Dialogs.battiPicker(gid, meta))
+        .catch(e => toast(e.message));
+    });
+    const btNow = $('#bt-now', root);
+    if (btNow) btNow.addEventListener('click', () => {
+      toast('Controllo Batti…');
+      Batti.importNow()
+        .then(n => { toast(n ? (n === 1 ? '1 spesa importata ✓' : n + ' spese importate ✓') : 'Niente di nuovo da importare'); render(); })
+        .catch(e => toast(e.message));
+    });
+    const btOff = $('#bt-off', root);
+    if (btOff) btOff.addEventListener('click', async () => {
+      DB.state.settings.batti = { ...DB.state.settings.batti, on: false };
+      await DB.saveSettings();
+      toast('Batti scollegata'); render();
+    });
 
     $('#bk-export', root).addEventListener('click', () => Dialogs.passwordFlow('export'));
     $('#bk-import', root).addEventListener('click', () => $('#bk-file').click());
@@ -1148,6 +1187,39 @@ const Dialogs = {
     });
   },
 
+  /* --- collegamento Batti: chi sei e su quale conto --- */
+  battiPicker(gid, meta) {
+    const members = meta.members || [];
+    const preselect = members.find(m => /gi[oò]/i.test(m.name || ''))?.id || members[0]?.id;
+    const dlg = Dialogs.open(`
+      <div class="dlg-head"><h2>Collega "${esc(meta.name || 'Gruppo')}"</h2><button class="iconbtn dlg-close" aria-label="Chiudi"><svg class="ic"><use href="#i-x"/></svg></button></div>
+      <div class="dlg-body">
+        <div class="field"><label for="bp-member">Chi sei nel gruppo?</label>
+          <select id="bp-member">${members.map(m => `<option value="${esc(m.id)}" ${m.id === preselect ? 'selected' : ''}>${esc(m.name)}</option>`).join('')}</select>
+        </div>
+        <div class="field"><label for="bp-account">Su quale conto registro le spese?</label>
+          <select id="bp-account">${DB.state.accounts.filter(a => !a.archived).map(a => `<option value="${a.id}">${esc(a.icon)} ${esc(a.name)}</option>`).join('')}</select>
+          <div class="hint">Importo solo le spese <strong>pagate da te</strong>, da oggi in poi, con nota "Importata automaticamente da Batti". Se ne elimini una qui, non viene reimportata.</div>
+        </div>
+      </div>
+      <div class="dlg-foot">
+        <button class="btn dlg-close">Annulla</button>
+        <button class="btn primary" id="bp-ok">Collega</button>
+      </div>`);
+    $('#bp-ok', dlg).addEventListener('click', async () => {
+      const memberId = $('#bp-member', dlg).value;
+      DB.state.settings.batti = {
+        on: true, groupId: gid, groupName: meta.name || 'Gruppo',
+        memberId, memberName: members.find(m => m.id === memberId)?.name || '',
+        account: $('#bp-account', dlg).value, fromDate: todayISO(), lastImport: 0,
+      };
+      await DB.saveSettings();
+      dlg.close();
+      toast('Batti collegata ✓');
+      Batti.importNow().then(n => { if (n) { toast(n + ' spese importate ✓'); } render(); }).catch(() => render());
+    });
+  },
+
   /* --- password di sincronizzazione --- */
   syncPassword(onOk, wrongBefore) {
     const dlg = Dialogs.open(`
@@ -1261,6 +1333,7 @@ const Dialogs = {
   navigate();
   Sync.boot();
   Sync.onChange(() => { if (UI.route === 'impostazioni') render(); });
+  Batti.boot();
 
   // anti-cache: se online esiste una versione piu' nuova, ripulisci e ricarica da solo
   async function checkForUpdate() {

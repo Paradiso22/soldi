@@ -109,4 +109,17 @@ const b = DB.balances();
 assert.equal(b.get('conto'), 7000); // 100 - 30 di carta; il giroconto interno si annulla
 assert.equal(b.get('carta'), 0);    // la carta non va in negativo per conto suo
 
-console.log('OK - fisco, parser, merge di sync, ricorrenze e carta collegata combaciano');
+// --- ponte Batti: parsing del link e mappatura categorie ---
+(0, eval)(load('js/batti.js') + '\n;globalThis.Batti = Batti;');
+const { Batti } = globalThis;
+assert.equal(Batti.parseGroupId('https://paradiso22.github.io/batti/#/g/123e4567-e89b-12d3-a456-426614174000'), '123e4567-e89b-12d3-a456-426614174000');
+assert.equal(Batti.parseGroupId('123e4567-e89b-12d3-a456-426614174000'), '123e4567-e89b-12d3-a456-426614174000');
+DB.state.categories = [
+  { id: 'spesa-casa', name: 'Spesa Casa' }, { id: 'pasti', name: 'Pasti fuori o domicilio' },
+  { id: 'utenze', name: 'Utenze' }, { id: 'extra', name: 'Extra' },
+];
+assert.equal(Batti.mapCategory('Spesa'), 'spesa-casa');
+assert.equal(Batti.mapCategory('Fuori casa'), 'pasti');
+assert.equal(Batti.mapCategory('Bollette'), null); // nessun match: resta da assegnare
+
+console.log('OK - fisco, parser, merge di sync, ricorrenze, carta collegata e ponte Batti combaciano');
