@@ -1088,6 +1088,7 @@ const Dialogs = {
   $('#app').hidden = false;
   window.addEventListener('hashchange', navigate);
   $('#btn-add').addEventListener('click', () => Dialogs.txForm(null));
+  $('#btn-settings').addEventListener('click', () => { location.hash = '#/impostazioni'; });
   navigate();
   Sync.boot();
   Sync.onChange(() => { if (UI.route === 'impostazioni') render(); });
