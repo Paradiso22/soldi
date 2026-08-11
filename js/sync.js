@@ -11,8 +11,10 @@ const Sync = (() => {
 
   let tokenClient = null;
   let token = null, tokenExp = 0;
+  let tokenPromise = null; // una sola richiesta token alla volta
   let timer = null;
   let syncing = false;
+  let connecting = false;
   let applyingRemote = false;
   const listeners = new Set();
 
@@ -35,6 +37,7 @@ const Sync = (() => {
 
   async function getToken(interactive) {
     if (token && Date.now() < tokenExp - 60000) return token;
+    if (tokenPromise) return tokenPromise; // non sovrapporre due richieste (ruberebbero il callback)
     await loadGis();
     const clientId = cfg()?.clientId;
     if (!clientId) throw new Error('Manca il Client ID Google.');
@@ -44,8 +47,11 @@ const Sync = (() => {
       });
       tokenClient._cid = clientId;
     }
-    return new Promise((res, rej) => {
+    tokenPromise = new Promise((res, rej) => {
+      // senza gesto dell'utente il popup puo' essere bloccato in silenzio: non restare appesi
+      const guard = interactive ? null : setTimeout(() => rej(new Error('SILENT_FAIL')), 8000);
       tokenClient.callback = (r) => {
+        if (guard) clearTimeout(guard);
         if (r.error) return rej(new Error(interactive
           ? 'Accesso Google annullato o negato (' + r.error + ').'
           : 'SILENT_FAIL'));
@@ -55,8 +61,13 @@ const Sync = (() => {
       };
       try {
         tokenClient.requestAccessToken({ prompt: interactive ? 'consent' : '' });
-      } catch (e) { rej(e); }
+      } catch (e) { if (guard) clearTimeout(guard); rej(e); }
     });
+    try {
+      return await tokenPromise;
+    } finally {
+      tokenPromise = null;
+    }
   }
 
   /* ---------- Drive API ---------- */
@@ -251,21 +262,26 @@ const Sync = (() => {
 
   // chiamata dopo ogni modifica ai dati: sync in background dopo 4s di quiete
   function schedule() {
-    if (!enabled() || applyingRemote) return;
+    if (!enabled() || applyingRemote || connecting) return;
     clearTimeout(timer);
-    timer = setTimeout(() => syncNow().catch(() => {}), 4000);
+    timer = setTimeout(() => { if (!connecting) syncNow().catch(() => {}); }, 4000);
   }
 
   async function connect(clientId, password) {
+    connecting = true;
+    clearTimeout(timer);
     DB.state.settings.sync = { on: true, clientId: clientId.trim(), lastSync: 0 };
     await DB.saveSettings();
     try {
       await getToken(true);
       await syncNow({ interactive: true, password });
+      if (!cfg().lastSync) throw new Error('La sincronizzazione non è partita, riprova.');
     } catch (e) {
       DB.state.settings.sync.on = false;
       await DB.saveSettings();
       throw e;
+    } finally {
+      connecting = false;
     }
   }
 
