@@ -1,7 +1,7 @@
 /* app.js - Soldi. Router, viste, dialog. */
 'use strict';
 
-const APP_VERSION = 'v15';
+const APP_VERSION = 'v16';
 
 /* ---------- helpers ---------- */
 const EUR = new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' });
@@ -787,7 +787,7 @@ const Dialogs = {
     const dlg = Dialogs.open(`
       <div class="dlg-head"><h2>${esc(title)}</h2><button class="iconbtn dlg-close" aria-label="Chiudi"><svg class="ic"><use href="#i-x"/></svg></button></div>
       <div class="dlg-body"><p style="color:var(--chalk-2)">${esc(body)}</p></div>
-      <div class="dlg-foot"><button class="btn ghost dlg-close">Annulla</button><button class="btn danger" id="c-ok">${esc(okLabel)}</button></div>`);
+      <div class="dlg-foot"><button class="btn dlg-close">Annulla</button><button class="btn danger" id="c-ok">${esc(okLabel)}</button></div>`);
     $('#c-ok', dlg).addEventListener('click', async () => { dlg.close(); await onOk(); });
   },
 
@@ -847,9 +847,8 @@ const Dialogs = {
         <div class="field"><label for="t-note">Nota (facoltativa)</label><input id="t-note" type="text" value="${esc(t.note || '')}" autocomplete="off"></div>
       </div>
       <div class="dlg-foot">
-        ${isNew ? '' : '<button class="btn danger" id="t-del"><svg class="ic"><use href="#i-trash"/></svg> Elimina</button>'}
-        <span class="spacer"></span>
-        <button class="btn ghost dlg-close">Annulla</button>
+        ${isNew ? '' : '<button class="iconbtn dlg-del" id="t-del" aria-label="Elimina movimento"><svg class="ic"><use href="#i-trash"/></svg></button>'}
+        <button class="btn dlg-close">Annulla</button>
         <button class="btn primary" id="t-save"><svg class="ic"><use href="#i-check"/></svg> ${isNew ? 'Segna' : 'Salva'}</button>
       </div>`);
 
@@ -935,9 +934,8 @@ const Dialogs = {
         </div>
       </div>
       <div class="dlg-foot">
-        <button class="btn ghost" id="q-edit">Correggi</button>
-        <span class="spacer"></span>
-        <button class="btn ghost dlg-close">Annulla</button>
+        <button class="btn" id="q-edit">Correggi</button>
+        <button class="btn dlg-close">Annulla</button>
         <button class="btn primary" id="q-save"><svg class="ic"><use href="#i-check"/></svg> Segna</button>
       </div>`);
     $('#q-save', dlg).addEventListener('click', async () => {
@@ -1023,7 +1021,7 @@ const Dialogs = {
       <div class="dlg-foot">
         ${isNew ? '' : `<button class="btn danger" id="a-arch">${a.archived ? 'Ripristina' : 'Archivia'}</button>`}
         <span class="spacer"></span>
-        <button class="btn ghost dlg-close">Annulla</button>
+        <button class="btn dlg-close">Annulla</button>
         <button class="btn primary" id="a-save">Salva</button>
       </div>`);
 
@@ -1059,7 +1057,7 @@ const Dialogs = {
         if (real == null) { toast('Scrivi il saldo reale.'); return; }
         const diff = real - bal;
         if (!diff) { toast('Il saldo torna già ✓'); return; }
-        await DB.putTx({ desc: 'Rettifica saldo ' + a.name, date: todayISO(), amount: Math.abs(diff), type: diff > 0 ? 'in' : 'out', account: a.id, toAccount: null, category: null, note: 'Rettifica automatica' });
+        await DB.putTx({ desc: 'Rettifica saldo ' + a.name, date: todayISO(), amount: Math.abs(diff), type: diff > 0 ? 'in' : 'out', account: a.id, toAccount: null, category: DB.cat('rettifiche') ? 'rettifiche' : null, note: 'Rettifica automatica' });
         dlg.close(); toast('Saldo rettificato: ' + fmtS(diff)); render();
       });
     }
@@ -1079,7 +1077,7 @@ const Dialogs = {
       <div class="dlg-foot">
         ${isNew ? '' : '<button class="btn danger" id="c-arch">Archivia</button>'}
         <span class="spacer"></span>
-        <button class="btn ghost dlg-close">Annulla</button>
+        <button class="btn dlg-close">Annulla</button>
         <button class="btn primary" id="c-save">Salva</button>
       </div>`);
     $('#c-save', dlg).addEventListener('click', async () => {
@@ -1108,7 +1106,7 @@ const Dialogs = {
         <div class="field"><label for="sy-pw">Password</label><input id="sy-pw" type="password" autocomplete="off"></div>
       </div>
       <div class="dlg-foot">
-        <button class="btn ghost dlg-close">Annulla</button>
+        <button class="btn dlg-close">Annulla</button>
         <button class="btn primary" id="sy-pw-ok">Avanti</button>
       </div>`);
     $('#sy-pw-ok', dlg).addEventListener('click', () => {
@@ -1133,7 +1131,7 @@ const Dialogs = {
         ${isExp ? '<div class="field"><label for="pw2">Ripeti password</label><input id="pw2" type="password" autocomplete="new-password"></div>' : ''}
       </div>
       <div class="dlg-foot">
-        <button class="btn ghost dlg-close">Annulla</button>
+        <button class="btn dlg-close">Annulla</button>
         <button class="btn primary" id="pw-ok">${isExp ? 'Esporta' : 'Importa'}</button>
       </div>`);
     $('#pw-ok', dlg).addEventListener('click', async () => {

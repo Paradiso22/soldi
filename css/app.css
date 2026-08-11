@@ -365,9 +365,11 @@ dialog::backdrop { background: rgba(28, 27, 26, .35); backdrop-filter: blur(3px)
 }
 .dlg-head h2 { font-family: var(--display); font-weight: 700; font-size: 1.3rem; }
 .dlg-body { padding: 4px 20px 18px; overflow-y: auto; }
-.dlg-foot { display: flex; gap: 10px; align-items: center; padding: 12px 20px calc(16px + env(safe-area-inset-bottom)); border-top: 1px solid var(--line); position: sticky; bottom: 0; background: var(--card); }
+.dlg-foot { display: flex; gap: 10px; align-items: stretch; padding: 12px 20px calc(16px + env(safe-area-inset-bottom)); border-top: 1px solid var(--line); position: sticky; bottom: 0; background: var(--card); }
 .dlg-foot .spacer { display: none; }
-.dlg-foot .btn { flex: 1; justify-content: center; }
+.dlg-foot .btn { flex: 1; justify-content: center; white-space: nowrap; }
+.dlg-foot .iconbtn.dlg-del { flex: none; width: 46px; height: auto; min-height: 46px; border-radius: 999px; background: var(--neg-soft); color: var(--neg); }
+.dlg-foot .iconbtn.dlg-del:hover { background: #fbd2cc; }
 
 /* chat / veloce */
 .chatlog { display: flex; flex-direction: column; gap: 10px; min-height: 130px; padding: 6px 0 10px; }

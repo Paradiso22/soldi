@@ -17,6 +17,7 @@ const Parser = (() => {
     [/VIAGGI|HOTEL|B&B|\bVOLO\b|RYANAIR|EASYJET|TRENITALIA|ITABUS|FLIXBUS|AIRBNB|BOOKING/i, 'viaggi'],
     [/AFFITT/i, 'affitto'],
     [/COLLABORAT/i, 'collaboratori'],
+    [/RETTIFIC/i, 'rettifiche'],
   ];
 
   const IN_WORDS = /\b(entrata|incasso|incassat[oa]|ricevut[oa]|guadagnat[oa]|stipendio|accredito|\+)\b/i;

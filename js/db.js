@@ -37,6 +37,7 @@ const DB = (() => {
     { id: 'tasse',        name: 'Tasse e Contributi',         icon: '💸', archived: false },
     { id: 'viaggi',       name: 'Viaggi',                     icon: '🌍', archived: false },
     { id: 'utenze',       name: 'Utenze',                     icon: '💡', archived: false },
+    { id: 'rettifiche',   name: 'Rettifiche',                 icon: '⚖️', archived: false },
   ];
   const DEFAULT_SETTINGS = {
     imposta: 0.15,   // imposta sostitutiva
