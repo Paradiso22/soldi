@@ -1,7 +1,7 @@
 /* app.js - Soldi. Router, viste, dialog. */
 'use strict';
 
-const APP_VERSION = 'v22';
+const APP_VERSION = 'v23';
 
 /* ---------- helpers ---------- */
 const EUR = new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' });
@@ -794,6 +794,15 @@ const Views = {
       </div>`;
       })()}
 
+      ${AppLock.isSupported() || AppLock.enabled() ? `
+      <div class="setcard">
+        <h4>Blocco app</h4>
+        <div class="s-desc">${AppLock.enabled()
+          ? 'Attivo ✓ - per aprire Soldi su questo dispositivo servono impronta o codice del telefono. Si riblocca dopo 1 minuto in background.'
+          : 'Chiedi l\'impronta (o il codice di sblocco del telefono) per aprire Soldi su questo dispositivo. Impostazione locale: va attivata su ogni dispositivo.'}</div>
+        <button class="btn ${AppLock.enabled() ? '' : 'primary'}" id="lock-toggle">${AppLock.enabled() ? 'Disattiva blocco' : 'Attiva blocco con impronta'}</button>
+      </div>` : ''}
+
       <div class="setcard">
         <h4>Aggiornamento app</h4>
         <div class="s-desc">Versione attuale: <strong>${APP_VERSION}</strong>. L'app si aggiorna da sola a ogni apertura; se resta indietro, forza da qui (i dati non si toccano).</div>
@@ -893,6 +902,17 @@ const Views = {
       e.target.value = '';
     });
     $('#bk-csv', root).addEventListener('click', () => { Backup.exportCSV(); toast('CSV esportato ✓'); });
+
+    const lt = $('#lock-toggle', root);
+    if (lt) lt.addEventListener('click', async () => {
+      try {
+        if (AppLock.enabled()) { await AppLock.disableSecure(); toast('Blocco disattivato'); }
+        else { await AppLock.enable(); toast('Blocco attivo ✓ - alla prossima apertura serve l\'impronta'); }
+        render();
+      } catch {
+        toast(AppLock.enabled() ? 'Sblocco annullato: il blocco resta attivo.' : 'Attivazione annullata.');
+      }
+    });
 
     $('#app-refresh', root).addEventListener('click', () => { toast('Riscarico l\'app…'); hardRefresh(true); });
 
@@ -1370,6 +1390,10 @@ const Dialogs = {
 
 /* ---------- avvio ---------- */
 (async function boot() {
+  // subito: se il blocco e' attivo, lo schermo si copre prima dei dati;
+  // finito il rilevamento, aggiorna le impostazioni se sono in vista
+  AppLock.boot().then(() => { if (UI.route === 'impostazioni') render(); });
+
   try {
     await DB.init();
   } catch (e) {

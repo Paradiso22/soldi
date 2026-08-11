@@ -458,6 +458,16 @@ table.sheet { border-collapse: collapse; width: 100%; font-size: .85rem; min-wid
 .empty .e-marker { font-family: var(--display); font-size: 1.25rem; font-weight: 700; color: var(--ink-2); margin-bottom: 6px; }
 .empty .ic { width: 36px; height: 36px; margin-bottom: 10px; opacity: .5; }
 
+/* blocco app */
+#lockscreen {
+  position: fixed; inset: 0; z-index: 300;
+  background: var(--bg);
+  display: grid; place-items: center;
+}
+#lockscreen .lock-inner { display: flex; flex-direction: column; align-items: center; gap: 8px; text-align: center; padding: 24px; }
+#lockscreen h2 { font-family: var(--display); font-weight: 800; font-size: 1.8rem; }
+#lockscreen p { color: var(--ink-3); font-weight: 700; font-size: .92rem; margin-bottom: 12px; }
+
 /* tira-per-aggiornare */
 #ptr {
   position: fixed; top: calc(10px + env(safe-area-inset-top)); left: 50%;
