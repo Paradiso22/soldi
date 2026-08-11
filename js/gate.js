@@ -16,7 +16,7 @@ const Gate = (() => {
 
   // avviso via email dopo ALERT_AT errori: web app Google Apps Script dell'utente.
   // Vuoto = nessun avviso. L'indirizzo email non sta qui: lo script lo manda a se stesso.
-  const ALERT_URL = '';
+  const ALERT_URL = 'https://script.google.com/macros/s/AKfycbx7KpchrCNaPymg35GIsieNKB74SSCO1yQhccLwQTBIf8BwwqnMld3mnABLrEID-1HE/exec';
   const ALERT_AT = 3;
 
   // 5 tentativi con attese crescenti, poi blocco di 24 ore.
