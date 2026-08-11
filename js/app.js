@@ -1,7 +1,7 @@
 /* app.js - Soldi. Router, viste, dialog. */
 'use strict';
 
-const APP_VERSION = 'v17';
+const APP_VERSION = 'v18';
 
 /* ---------- helpers ---------- */
 const EUR = new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' });
@@ -702,6 +702,23 @@ const Views = {
         <input type="file" id="bk-file" accept=".soldi" hidden>
       </div>
 
+      ${(() => {
+        const bin = DB.state.gone.filter(g => g.tx).sort((x, y) => y.updatedAt - x.updatedAt);
+        return `<div class="setcard">
+        <h4>Cestino</h4>
+        <div class="s-desc">I movimenti eliminati restano qui 30 giorni e puoi ripristinarli; poi spariscono da soli.</div>
+        ${bin.length ? bin.map(g => `
+          <div class="rowitem">
+            <span style="font-size:1.05rem">${DB.cat(g.tx.category)?.icon || '🗑️'}</span>
+            <span class="r-main"><span class="r-name">${esc(g.tx.desc)}</span>
+            <span class="r-sub money">${fmtDate(g.tx.date, g.tx.dayUnknown)} · ${g.tx.type === 'in' ? '+' : '-'} ${fmt(g.tx.amount)}</span></span>
+            <button class="iconbtn" data-restore="${g.id}" aria-label="Ripristina ${esc(g.tx.desc)}" title="Ripristina"><svg class="ic"><use href="#i-up"/></svg></button>
+          </div>`).join('') + `
+        <button class="btn danger" id="trash-empty" style="margin-top:10px">Svuota cestino (${bin.length})</button>`
+        : '<div class="s-desc" style="margin:0">Il cestino è vuoto.</div>'}
+      </div>`;
+      })()}
+
       <div class="setcard">
         <h4>Aggiornamento app</h4>
         <div class="s-desc">Versione attuale: <strong>${APP_VERSION}</strong>. L'app si aggiorna da sola a ogni apertura; se resta indietro, forza da qui (i dati non si toccano).</div>
@@ -781,6 +798,19 @@ const Views = {
 
     $('#app-refresh', root).addEventListener('click', () => { toast('Riscarico l\'app…'); hardRefresh(true); });
 
+    $$('[data-restore]', root).forEach(b => b.addEventListener('click', async () => {
+      const t = await DB.restoreTx(b.dataset.restore);
+      toast(t ? 'Ripristinato ✓' : 'Non ripristinabile');
+      render();
+    }));
+    const te = $('#trash-empty', root);
+    if (te) te.addEventListener('click', () => Dialogs.confirm(
+      'Svuotare il cestino?',
+      'I movimenti nel cestino non saranno più ripristinabili.',
+      'Svuota',
+      async () => { await DB.emptyTrash(); toast('Cestino svuotato'); render(); }
+    ));
+
     $('#wipe', root).addEventListener('click', () => Dialogs.confirm(
       'Cancellare tutto?',
       'Tutti i movimenti, i conti e le impostazioni verranno eliminati da questo dispositivo. Non si può annullare.',
@@ -796,7 +826,9 @@ const Dialogs = {
     const holder = $('#dialogs');
     holder.innerHTML = `<dialog class="${cls}">${html}</dialog>`;
     const dlg = holder.firstElementChild;
-    dlg.addEventListener('close', () => { holder.innerHTML = ''; });
+    // pulisci solo se questo dialog è ancora montato: l'evento 'close' arriva in ritardo
+    // e non deve distruggere un dialog aperto subito dopo (es. la conferma di eliminazione)
+    dlg.addEventListener('close', () => { if (dlg.isConnected) holder.innerHTML = ''; });
     dlg.addEventListener('click', e => { if (e.target === dlg) dlg.close(); });
     $$('.dlg-close', dlg).forEach(b => b.addEventListener('click', () => dlg.close()));
     dlg.showModal();

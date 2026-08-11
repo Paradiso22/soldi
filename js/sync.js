@@ -177,8 +177,8 @@ const Sync = (() => {
       const t = byId.get(id);
       if (t && g.updatedAt >= ts(t)) byId.delete(id);
     }
-    // tieni solo i tombstone recenti (90 giorni)
-    const cutoff = Date.now() - 90 * 864e5;
+    // tieni solo i tombstone recenti (30 giorni: la finestra del cestino)
+    const cutoff = Date.now() - 30 * 864e5;
     const goneOut = [...gone.values()].filter(g => g.updatedAt > cutoff);
 
     const revL = loc.metaRev || {}, revR = rem.metaRev || {};

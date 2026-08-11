@@ -80,7 +80,7 @@ const DB = (() => {
     state.categories = categories || structuredClone(DEFAULT_CATEGORIES);
     state.settings = Object.assign({}, DEFAULT_SETTINGS, settings || {});
     state.seeded = !!seeded;
-    state.gone = (gone || []).filter(g => g.updatedAt > Date.now() - 90 * 864e5);
+    state.gone = (gone || []).filter(g => g.updatedAt > Date.now() - 30 * 864e5);
     state.metaRev = metaRev || {};
     sortTx();
   }
@@ -118,9 +118,27 @@ const DB = (() => {
   }
 
   async function deleteTx(id) {
+    const t = state.tx.find(x => x.id === id);
     await idbReq(tstore('tx', 'readwrite').delete(id));
-    state.tx = state.tx.filter(t => t.id !== id);
-    state.gone.push({ id, updatedAt: Date.now() });
+    state.tx = state.tx.filter(x => x.id !== id);
+    // nel cestino per 30 giorni: tombstone per la sync + copia per il ripristino
+    state.gone.push({ id, updatedAt: Date.now(), ...(t ? { tx: { ...t } } : {}) });
+    await saveMeta('gone', state.gone);
+    ping();
+  }
+
+  // ripristina un movimento dal cestino
+  async function restoreTx(id) {
+    const g = state.gone.find(x => x.id === id && x.tx);
+    if (!g) return null;
+    state.gone = state.gone.filter(x => x.id !== id);
+    await saveMeta('gone', state.gone);
+    return putTx({ ...g.tx });
+  }
+
+  // svuota il cestino: butta le copie ripristinabili, i tombstone restano (servono alla sync)
+  async function emptyTrash() {
+    state.gone.forEach(g => { delete g.tx; });
     await saveMeta('gone', state.gone);
     ping();
   }
@@ -315,7 +333,7 @@ const DB = (() => {
   }
 
   return {
-    state, init, putTx, putTxBulk, deleteTx, replaceAllTx,
+    state, init, putTx, putTxBulk, deleteTx, restoreTx, emptyTrash, replaceAllTx,
     saveAccounts, saveCategories, saveSettings, saveGone, markSeeded, wipeAll,
     getSyncKey, getSyncSalt, setSyncKey,
     nextRecurDate, materializeRecurring, migrateRecurringNotes,
