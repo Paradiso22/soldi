@@ -1,7 +1,7 @@
 /* app.js - Soldi. Router, viste, dialog. */
 'use strict';
 
-const APP_VERSION = 'v35';
+const APP_VERSION = 'v36';
 
 /* ---------- helpers ---------- */
 const EUR = new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' });
@@ -1610,6 +1610,11 @@ const Dialogs = {
 
 /* ---------- avvio ---------- */
 (async function boot() {
+  // anti-clickjacking: GitHub Pages non manda X-Frame-Options e frame-ancestors
+  // non vale dentro il tag meta, quindi lo facciamo qui: se qualcuno incornicia
+  // l'app in un suo sito per rubare i clic, la portiamo in primo piano.
+  if (window.top !== window.self) { try { window.top.location = window.self.location; } catch { document.documentElement.innerHTML = ''; } }
+
   // password d'ingresso: senza, l'app non parte nemmeno (dati mai caricati)
   await Gate.boot();
 

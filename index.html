@@ -6,11 +6,26 @@
 <title>Soldi</title>
 <meta name="description" content="I tuoi soldi, semplici: conti, spese e fatture del forfettario. Tutto tuo, tutto locale.">
 <meta name="theme-color" content="#f6f4f0">
+<!-- Se un giorno finisse codice estraneo dentro la pagina, questa policy gli impedisce
+     di caricarsi e di spedire i tuoi dati altrove: si parla solo con Google (Drive,
+     Firestore, Gemini, Apps Script) e con questo sito. -->
+<meta http-equiv="Content-Security-Policy" content="
+  default-src 'self';
+  base-uri 'none';
+  object-src 'none';
+  form-action 'none';
+  script-src 'self' https://accounts.google.com;
+  style-src 'self' 'unsafe-inline';
+  img-src 'self' data: blob:;
+  font-src 'self';
+  frame-src https://accounts.google.com;
+  connect-src 'self' https://www.googleapis.com https://firestore.googleapis.com https://generativelanguage.googleapis.com https://script.google.com https://script.googleusercontent.com https://accounts.google.com;
+">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
 <link rel="alternate icon" href="icons/favicon.ico" sizes="16x16 32x32 48x48 64x64 128x128 256x256">
 <link rel="apple-touch-icon" href="icons/icon-192.png">
-<link rel="stylesheet" href="css/app.css?v=35">
+<link rel="stylesheet" href="css/app.css?v=36">
 </head>
 <body>
 <!--
@@ -91,14 +106,14 @@ review, the verdict, and DESIGN.md.
 
 <noscript><p style="padding:2rem;font-family:sans-serif">Soldi ha bisogno di JavaScript per funzionare.</p></noscript>
 
-<script src="js/db.js?v=35" defer></script>
-<script src="js/parser.js?v=35" defer></script>
-<script src="js/charts.js?v=35" defer></script>
-<script src="js/backup.js?v=35" defer></script>
-<script src="js/sync.js?v=35" defer></script>
-<script src="js/batti.js?v=35" defer></script>
-<script src="js/gate.js?v=35" defer></script>
-<script src="js/lock.js?v=35" defer></script>
-<script src="js/app.js?v=35" defer></script>
+<script src="js/db.js?v=36" defer></script>
+<script src="js/parser.js?v=36" defer></script>
+<script src="js/charts.js?v=36" defer></script>
+<script src="js/backup.js?v=36" defer></script>
+<script src="js/sync.js?v=36" defer></script>
+<script src="js/batti.js?v=36" defer></script>
+<script src="js/gate.js?v=36" defer></script>
+<script src="js/lock.js?v=36" defer></script>
+<script src="js/app.js?v=36" defer></script>
 </body>
 </html>
