@@ -9,7 +9,40 @@
 
 const Gate = (() => {
   const KEY = 'soldi-gate';
+  const FAILS = 'soldi-gate-fails';   // errori consecutivi
+  const UNTIL = 'soldi-gate-until';   // istante in cui si potra' riprovare
+  const SENT = 'soldi-gate-sent';     // ultimo avviso inviato
   const ITER = 310000;
+
+  // avviso via email dopo ALERT_AT errori: web app Google Apps Script dell'utente.
+  // Vuoto = nessun avviso. L'indirizzo email non sta qui: lo script lo manda a se stesso.
+  const ALERT_URL = '';
+  const ALERT_AT = 5;
+
+  // attesa progressiva: 5s, 10s, 20s, 40s... fino a 15 minuti
+  const penalty = f => (f < 2 ? 0 : Math.min(5000 * 2 ** (f - 2), 900000));
+  const fails = () => +localStorage.getItem(FAILS) || 0;
+  const waitLeft = () => Math.max(0, (+localStorage.getItem(UNTIL) || 0) - Date.now());
+
+  function fmtWait(ms) {
+    const s = Math.ceil(ms / 1000);
+    if (s < 60) return s + ' second' + (s === 1 ? 'o' : 'i');
+    const m = Math.ceil(s / 60);
+    return m + ' minut' + (m === 1 ? 'o' : 'i');
+  }
+
+  // avvisa il proprietario: nessun dato personale, solo quando e da quale dispositivo
+  async function alertOwner(n) {
+    if (!ALERT_URL) return;
+    if (Date.now() - (+localStorage.getItem(SENT) || 0) < 1800000) return; // max 1 ogni 30 min
+    localStorage.setItem(SENT, String(Date.now()));
+    try {
+      await fetch(ALERT_URL, {
+        method: 'POST', mode: 'no-cors', keepalive: true,
+        body: JSON.stringify({ fails: n, ua: navigator.userAgent, when: new Date().toISOString() }),
+      });
+    } catch { /* se non parte, pazienza: l'attesa progressiva regge comunque */ }
+  }
 
   // null = nessuna protezione (l'app si apre e mostra il setup nelle impostazioni)
   const V = { salt: 'a0a65c294d3c165cb6f0cda3c411b686', hash: '48e8f6c3eaeea1696b265342039a072377c3bbbf865dba9d4a76098c188fe1e0' };
@@ -32,14 +65,28 @@ const Gate = (() => {
     return { salt: hex(salt), hash: await derive(pw, salt) };
   }
 
+  // { ok } oppure { ok:false, wait } quando si e' ancora in attesa
   async function tryUnlock(pw) {
-    if (!V) return true;
+    if (!V) return { ok: true };
+    const left = waitLeft();
+    if (left > 0) return { ok: false, wait: left };
+
     const ok = (await derive(pw, unhex(V.salt))) === V.hash;
-    if (ok) localStorage.setItem(KEY, V.hash); // ricordato: non la richiede piu'
-    return ok;
+    if (ok) {
+      localStorage.setItem(KEY, V.hash); // ricordato: non la richiede piu'
+      localStorage.removeItem(FAILS);
+      localStorage.removeItem(UNTIL);
+      return { ok: true };
+    }
+    const n = fails() + 1;
+    localStorage.setItem(FAILS, String(n));
+    const p = penalty(n);
+    if (p) localStorage.setItem(UNTIL, String(Date.now() + p));
+    if (n >= ALERT_AT) alertOwner(n);
+    return { ok: false, wait: p, fails: n };
   }
 
-  function forget() { localStorage.removeItem(KEY); }
+  function forget() { [KEY, FAILS, UNTIL].forEach(k => localStorage.removeItem(k)); }
 
   function screen(resolve) {
     const el = document.createElement('div');
@@ -56,17 +103,48 @@ const Gate = (() => {
     document.body.appendChild(el);
     const input = el.querySelector('#gate-pw');
     const err = el.querySelector('#gate-err');
+    const btn = el.querySelector('#gate-ok');
+
+    let timer = null;
+    // durante l'attesa il bottone resta spento e mostra quanto manca
+    function countdown() {
+      clearInterval(timer);
+      const tick = () => {
+        const left = waitLeft();
+        if (left > 0) {
+          btn.disabled = true;
+          btn.textContent = 'Riprova tra ' + fmtWait(left);
+        } else {
+          clearInterval(timer);
+          btn.disabled = false;
+          btn.textContent = 'Entra';
+          input.focus();
+        }
+      };
+      tick();
+      timer = setInterval(tick, 1000);
+    }
+    if (waitLeft() > 0) {
+      err.textContent = 'Troppi tentativi sbagliati';
+      err.hidden = false;
+      countdown();
+    }
+
     el.querySelector('#gate-form').addEventListener('submit', async e => {
       e.preventDefault();
-      const btn = el.querySelector('#gate-ok');
+      if (btn.disabled) return;
       btn.disabled = true; btn.textContent = 'Controllo…';
-      const ok = await tryUnlock(input.value);
-      if (ok) { el.remove(); resolve(true); return; }
-      btn.disabled = false; btn.textContent = 'Entra';
+      const r = await tryUnlock(input.value);
+      if (r.ok) { clearInterval(timer); el.remove(); resolve(true); return; }
+      input.value = '';
+      err.textContent = r.wait
+        ? 'Password sbagliata (' + r.fails + '° errore): aspetta ' + fmtWait(r.wait)
+        : 'Password sbagliata';
       err.hidden = false;
-      input.value = ''; input.focus();
+      if (r.wait) countdown();
+      else { btn.disabled = false; btn.textContent = 'Entra'; input.focus(); }
     });
-    setTimeout(() => input.focus(), 80);
+    setTimeout(() => { if (!btn.disabled) input.focus(); }, 80);
   }
 
   // risolve solo quando si entra: senza password l'app non parte
