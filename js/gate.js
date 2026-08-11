@@ -17,12 +17,18 @@ const Gate = (() => {
   // avviso via email dopo ALERT_AT errori: web app Google Apps Script dell'utente.
   // Vuoto = nessun avviso. L'indirizzo email non sta qui: lo script lo manda a se stesso.
   const ALERT_URL = '';
-  const ALERT_AT = 5;
+  const ALERT_AT = 3;
 
-  // attesa progressiva: 5s, 10s, 20s, 40s... fino a 15 minuti
-  const penalty = f => (f < 2 ? 0 : Math.min(5000 * 2 ** (f - 2), 900000));
+  // 5 tentativi con attese crescenti, poi blocco di 24 ore.
+  // Il blocco e' muto: chi tenta vede solo "troppi tentativi errati", non la durata.
+  const MAX_FAILS = 5;
+  const BLOCK_MS = 24 * 3600 * 1000;
+  const WAITS = [5000, 20000, 60000, 300000]; // 5s, 20s, 1min, 5min
+  const penalty = f => (f >= MAX_FAILS ? BLOCK_MS : WAITS[f - 1] || 0);
+
   const fails = () => +localStorage.getItem(FAILS) || 0;
   const waitLeft = () => Math.max(0, (+localStorage.getItem(UNTIL) || 0) - Date.now());
+  const blocked = () => fails() >= MAX_FAILS && waitLeft() > 0;
 
   function fmtWait(ms) {
     const s = Math.ceil(ms / 1000);
@@ -65,11 +71,13 @@ const Gate = (() => {
     return { salt: hex(salt), hash: await derive(pw, salt) };
   }
 
-  // { ok } oppure { ok:false, wait } quando si e' ancora in attesa
+  // { ok } oppure { ok:false, wait } / { ok:false, blocked }
   async function tryUnlock(pw) {
     if (!V) return { ok: true };
-    const left = waitLeft();
-    if (left > 0) return { ok: false, wait: left };
+    if (blocked()) return { ok: false, blocked: true };
+    if (waitLeft() > 0) return { ok: false, wait: waitLeft() };
+    // blocco scaduto: si riparte da capo con altri 5 tentativi
+    if (fails() >= MAX_FAILS) { localStorage.removeItem(FAILS); localStorage.removeItem(UNTIL); }
 
     const ok = (await derive(pw, unhex(V.salt))) === V.hash;
     if (ok) {
@@ -83,7 +91,7 @@ const Gate = (() => {
     const p = penalty(n);
     if (p) localStorage.setItem(UNTIL, String(Date.now() + p));
     if (n >= ALERT_AT) alertOwner(n);
-    return { ok: false, wait: p, fails: n };
+    return n >= MAX_FAILS ? { ok: false, blocked: true } : { ok: false, wait: p, fails: n };
   }
 
   function forget() { [KEY, FAILS, UNTIL].forEach(k => localStorage.removeItem(k)); }
@@ -95,7 +103,7 @@ const Gate = (() => {
       <form class="gate-inner" id="gate-form">
         <span class="brand-euro" style="width:56px;height:56px;border-radius:18px;font-size:1.8rem">€</span>
         <h2>Soldi</h2>
-        <p>Inserisci la password per entrare.<br>Te la chiedo solo la prima volta su questo dispositivo.</p>
+        <p>Inserisci la password per entrare.</p>
         <input type="password" id="gate-pw" autocomplete="current-password" placeholder="Password" aria-label="Password d'ingresso">
         <button class="btn primary" type="submit" id="gate-ok" style="width:100%;justify-content:center;padding:14px">Entra</button>
         <span class="gate-err" id="gate-err" hidden>Password sbagliata</span>
@@ -106,10 +114,25 @@ const Gate = (() => {
     const btn = el.querySelector('#gate-ok');
 
     let timer = null;
-    // durante l'attesa il bottone resta spento e mostra quanto manca
+
+    // blocco: niente durata, niente conto alla rovescia. Chi tenta non deve
+    // sapere quanto dura ne' se sta aspettando qualcosa di preciso.
+    function showBlocked() {
+      clearInterval(timer);
+      input.disabled = true;
+      input.value = '';
+      input.placeholder = '';
+      btn.disabled = true;
+      btn.textContent = 'Troppi tentativi errati';
+      err.textContent = 'Troppi tentativi errati';
+      err.hidden = false;
+    }
+
+    // attese brevi: il conto alla rovescia resta, serve a chi ha solo sbagliato a digitare
     function countdown() {
       clearInterval(timer);
       const tick = () => {
+        if (blocked()) { showBlocked(); return; }
         const left = waitLeft();
         if (left > 0) {
           btn.disabled = true;
@@ -124,11 +147,9 @@ const Gate = (() => {
       tick();
       timer = setInterval(tick, 1000);
     }
-    if (waitLeft() > 0) {
-      err.textContent = 'Troppi tentativi sbagliati';
-      err.hidden = false;
-      countdown();
-    }
+
+    if (blocked()) showBlocked();
+    else if (waitLeft() > 0) { err.textContent = 'Troppi tentativi errati'; err.hidden = false; countdown(); }
 
     el.querySelector('#gate-form').addEventListener('submit', async e => {
       e.preventDefault();
@@ -137,9 +158,8 @@ const Gate = (() => {
       const r = await tryUnlock(input.value);
       if (r.ok) { clearInterval(timer); el.remove(); resolve(true); return; }
       input.value = '';
-      err.textContent = r.wait
-        ? 'Password sbagliata (' + r.fails + '° errore): aspetta ' + fmtWait(r.wait)
-        : 'Password sbagliata';
+      if (r.blocked) { showBlocked(); return; }
+      err.textContent = r.wait ? 'Password sbagliata: aspetta ' + fmtWait(r.wait) : 'Password sbagliata';
       err.hidden = false;
       if (r.wait) countdown();
       else { btn.disabled = false; btn.textContent = 'Entra'; input.focus(); }
