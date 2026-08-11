@@ -171,7 +171,12 @@ const Sync = (() => {
     const gone = new Map();
     for (const g of [...(rem.gone || []), ...(loc.gone || [])]) {
       const prev = gone.get(g.id);
-      if (!prev || g.updatedAt > prev.updatedAt) gone.set(g.id, g);
+      if (!prev) { gone.set(g.id, { ...g }); continue; }
+      const keep = { ...(g.updatedAt > prev.updatedAt ? g : prev) };
+      // svuotare il cestino e' monotono: se una parte l'ha svuotato resta svuotato,
+      // altrimenti i movimenti eliminati riapparivano al giro di sync successivo
+      if (!g.tx || !prev.tx) delete keep.tx;
+      gone.set(g.id, keep);
     }
     for (const [id, g] of gone) {
       const t = byId.get(id);
@@ -271,11 +276,11 @@ const Sync = (() => {
     }
   }
 
-  // chiamata dopo ogni modifica ai dati: sync in background dopo 4s di quiete
+  // chiamata dopo ogni modifica ai dati: sync quasi subito (1,2s di quiete)
   function schedule() {
     if (!enabled() || applyingRemote || connecting) return;
     clearTimeout(timer);
-    timer = setTimeout(() => { if (!connecting) syncNow().catch(() => {}); }, 4000);
+    timer = setTimeout(() => { if (!connecting) syncNow().catch(() => {}); }, 1200);
   }
 
   async function connect(clientId, password) {
@@ -311,6 +316,11 @@ const Sync = (() => {
     document.addEventListener('visibilitychange', () => {
       if (document.visibilityState === 'visible' && enabled()) syncNow().catch(() => {});
     });
+    // controllo periodico mentre l'app e' in primo piano: senza, un dispositivo
+    // gia' aperto non vedeva le modifiche fatte altrove finche' non lo si riapriva
+    setInterval(() => {
+      if (document.visibilityState === 'visible' && enabled() && !syncing) syncNow().catch(() => {});
+    }, 15000);
   }
 
   return { schedule, syncNow, connect, disconnect, boot, merge, state, enabled, onChange: fn => listeners.add(fn) };

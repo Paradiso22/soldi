@@ -1,12 +1,23 @@
 /* app.js - Soldi. Router, viste, dialog. */
 'use strict';
 
-const APP_VERSION = 'v33';
+const APP_VERSION = 'v34';
 
 /* ---------- helpers ---------- */
 const EUR = new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' });
-const fmt = c => EUR.format(c / 100);
-const fmtS = c => (c > 0 ? '+' : c < 0 ? '-' : '') + EUR.format(Math.abs(c) / 100);
+
+/* Modalita' riservata: nasconde solo come i numeri vengono mostrati.
+   Vive in localStorage (per dispositivo) e non tocca mai i dati ne' la sync. */
+const PRIVACY_KEY = 'soldi-privacy';
+let privacyOn = localStorage.getItem(PRIVACY_KEY) === '1';
+const privacyEnabled = () => privacyOn;
+function setPrivacy(on) {
+  privacyOn = on;
+  if (on) localStorage.setItem(PRIVACY_KEY, '1'); else localStorage.removeItem(PRIVACY_KEY);
+}
+
+const fmt = c => (privacyOn ? '••••' : EUR.format(c / 100));
+const fmtS = c => (privacyOn ? '••••' : (c > 0 ? '+' : c < 0 ? '-' : '') + EUR.format(Math.abs(c) / 100));
 const MESI = ['Gennaio', 'Febbraio', 'Marzo', 'Aprile', 'Maggio', 'Giugno', 'Luglio', 'Agosto', 'Settembre', 'Ottobre', 'Novembre', 'Dicembre'];
 const MESI_S = ['Gen', 'Feb', 'Mar', 'Apr', 'Mag', 'Giu', 'Lug', 'Ago', 'Set', 'Ott', 'Nov', 'Dic'];
 const esc = s => String(s ?? '').replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m]));
@@ -51,16 +62,51 @@ function fmtDate(iso, dayUnknown) {
 
 // colore stabile per categoria: le 8 categorie con più uscite di sempre
 // hanno il loro slot fisso; le altre confluiscono in "Altro" (grigio).
-function catColorSlots() {
+function catColorSlots(flow = 'out') {
   const tot = new Map();
   for (const t of DB.state.tx) {
-    if (t.type !== 'out' || !t.category) continue;
+    if (t.type !== flow || !t.category) continue;
     tot.set(t.category, (tot.get(t.category) || 0) + t.amount);
   }
   const slots = new Map();
   [...tot.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8).forEach(([id], i) => slots.set(id, i));
   return slots;
 }
+
+/* Barre del periodo scelto: giorni se il periodo e' corto, mesi se e' medio,
+   anni se e' lungo. Cosi' il grafico di destra risponde al filtro come quello
+   di sinistra, invece di restare fermo sull'anno. */
+function barBuckets(range) {
+  const oggi = todayISO();
+  const to = range.to > oggi ? oggi : range.to;   // niente futuro nelle statistiche
+  const from = range.from;
+  const giorni = Math.round((new Date(to) - new Date(from)) / 864e5) + 1;
+  const out = [];
+  const add = (label, f, t) => { const s = DB.sums({ from: f, to: t }); out.push({ label, in: s.in, out: s.out, from: f, to: t }); };
+
+  if (giorni <= 0) return out;
+  if (giorni <= 62) {
+    for (let i = 0; i < giorni; i++) {
+      const d = new Date(from); d.setDate(d.getDate() + i);
+      const iso = todayISOof(d);
+      add(giorni <= 14 ? d.getDate() + '/' + (d.getMonth() + 1) : String(d.getDate()), iso, iso);
+    }
+  } else if (giorni <= 750) {
+    let d = new Date(from.slice(0, 7) + '-01');
+    const last = to.slice(0, 7);
+    while (true) {
+      const ym = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+      const fine = new Date(d.getFullYear(), d.getMonth() + 1, 0);
+      add(MESI_S[d.getMonth()], ym + '-01', todayISOof(fine));
+      if (ym >= last) break;
+      d = new Date(d.getFullYear(), d.getMonth() + 1, 1);
+    }
+  } else {
+    for (let a = +from.slice(0, 4); a <= +to.slice(0, 4); a++) add(String(a), a + '-01-01', a + '-12-31');
+  }
+  return out;
+}
+const todayISOof = d => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
 
 // fette del donut per un filtro periodo: colori stabili, resto in "Altro".
 // flow: 'out' (uscite) o 'in' (entrate). I movimenti futuri non contano.
@@ -77,7 +123,9 @@ function donutSlices(filt, flow = 'out') {
     const k = t.category || '__none__';
     byCat.set(k, (byCat.get(k) || 0) + t.amount);
   }
-  const slots = catColorSlots();
+  // gli slot di colore sono per flusso: le categorie di incasso (es. Fatture)
+  // hanno il loro posto e non finiscono piu' dentro "Altro"
+  const slots = catColorSlots(flow);
   const named = [], rest = [];
   for (const [id, v] of byCat) {
     if (slots.has(id)) named.push({ id, label: DB.cat(id)?.name || id, value: v, color: Charts.SERIES_CSS[slots.get(id)] });
@@ -87,7 +135,13 @@ function donutSlices(filt, flow = 'out') {
   if (rest.length) {
     const others = rest.filter(r => r.id !== '__none__');
     const nocat = rest.find(r => r.id === '__none__');
-    if (others.length) named.push({ id: '__other__', label: 'Altro (' + others.length + ')', value: others.reduce((s, r) => s + r.v, 0), color: 'var(--s-other)' });
+    if (others.length) named.push({
+      id: '__other__', color: 'var(--s-other)',
+      label: 'Altro (' + others.length + ')',
+      value: others.reduce((s, r) => s + r.v, 0),
+      // cosa c'e' dentro: la legenda lo puo' aprire, cosi' "Altro" non e' un mistero
+      parts: others.map(r => ({ id: r.id, label: DB.cat(r.id)?.name || r.id, value: r.v })).sort((a, b) => b.value - a.value),
+    });
     if (nocat) named.push({ id: '__none__', label: 'Senza categoria', value: nocat.v, color: 'var(--s-none)' });
   }
   return named.filter(s => s.value > 0);
@@ -575,13 +629,9 @@ const Views = {
     const slices = donutSlices(filt, st.flow);
     const tot = slices.reduce((s, x) => s + x.value, 0);
 
-    // barre dell'anno dell'ancora
-    const months = MESI_S.map((lbl, i) => {
-      const ym = y + '-' + String(i + 1).padStart(2, '0');
-      const s = DB.sums({ ym });
-      return { label: lbl, in: s.in, out: s.out };
-    });
-    const ytot = DB.sums({ y: String(y) });
+    // le barre seguono il periodo scelto, non piu' l'anno fisso
+    const months = barBuckets(range);
+    const ytot = DB.sums({ from: range.from, to: range.to });
     const hasNav = ['day', 'week', 'month', 'year'].includes(st.scope);
 
     return `
@@ -615,15 +665,21 @@ const Views = {
         <div class="legend" role="list">
           ${slices.map(s2 => `<button class="lg-row" role="listitem" data-cat="${s2.id}">
             <span class="swatch" style="background:${s2.color}"></span>
-            <span class="lg-name">${esc(s2.label)}</span>
+            <span class="lg-name">${esc(s2.label)}${s2.parts ? (st.openOther ? ' ▾' : ' ▸') : ''}</span>
             <span class="lg-val money">${fmt(s2.value)}</span>
             <span class="lg-pct money">${Math.round(s2.value / tot * 100)}%</span>
-          </button>`).join('')}
+          </button>
+          ${s2.parts && st.openOther ? s2.parts.map(p => `<button class="lg-row lg-sub" role="listitem" data-cat="${p.id}">
+            <span class="swatch" style="background:var(--s-other);opacity:.5"></span>
+            <span class="lg-name">${esc(p.label)}</span>
+            <span class="lg-val money">${fmt(p.value)}</span>
+            <span class="lg-pct money">${Math.round(p.value / tot * 100)}%</span>
+          </button>`).join('') : ''}`).join('')}
         </div>`}
       </div>
 
       <div class="chartcard">
-        <h4>Entrate e uscite · ${y}</h4>
+        <h4>Entrate e uscite · ${range.label}</h4>
         <div class="c-sub"><span class="swatch" style="display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--s3)"></span> Entrate ${fmt(ytot.in)} &nbsp;
           <span class="swatch" style="display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--s2)"></span> Uscite ${fmt(ytot.out)} &nbsp;·&nbsp; saldo <strong class="money ${ytot.in - ytot.out >= 0 ? 'pos' : 'neg'}">${fmtS(ytot.in - ytot.out)}</strong></div>
         <div id="barchart"></div>
@@ -664,19 +720,21 @@ const Views = {
 
     $$('.lg-row', root).forEach(r => r.addEventListener('click', () => {
       const id = r.dataset.cat;
-      if (id === '__other__') return;
+      // "Altro" non porta da nessuna parte: si apre e mostra cosa contiene
+      if (id === '__other__') { st.openOther = !st.openOther; render(); return; }
       UI.mov = { scope: st.scope, anchor: st.anchor, custom: st.custom, account: null, category: id === '__none__' ? '__none__' : id, search: '', type: st.flow };
       location.hash = '#/movimenti';
     }));
 
-    const months = MESI_S.map((lbl, i) => {
-      const ym = y + '-' + String(i + 1).padStart(2, '0');
-      const s = DB.sums({ ym });
-      return { label: lbl, in: s.in, out: s.out };
-    });
-    Charts.bars($('#barchart', root), months, {
+    const buckets = barBuckets(range);
+    Charts.bars($('#barchart', root), buckets, {
       fmt,
-      onBarClick: i => { st.scope = 'month'; st.anchor = y + '-' + String(i + 1).padStart(2, '0') + '-01'; render(); },
+      onBarClick: i => {
+        const b = buckets[i];
+        if (!b) return;
+        st.scope = 'custom'; st.custom = { from: b.from, to: b.to };
+        render();
+      },
     });
   },
 
@@ -828,6 +886,22 @@ const Views = {
       </div>` : ''}
 
       <div class="setcard">
+        <h4>Promemoria</h4>
+        <div class="s-desc">Se passano più di 3 giorni senza che tu segni nulla (o senza spese in arrivo da Batti), all'apertura te lo ricordo. Con il permesso alle notifiche te lo dico anche fuori dall'app.
+        ${s.remind === false ? ' <strong>Ora è spento.</strong>' : ''}</div>
+        <div class="chip-row" style="margin:0">
+          <button class="btn ${s.remind === false ? 'primary' : ''}" id="rem-toggle">${s.remind === false ? 'Attiva promemoria' : 'Disattiva promemoria'}</button>
+          ${s.remind === false ? '' : `<button class="btn" id="rem-notif">${notifOn() ? 'Notifiche attive ✓' : 'Consenti notifiche'}</button>`}
+        </div>
+      </div>
+
+      <div class="setcard">
+        <h4>Modalità riservata</h4>
+        <div class="s-desc">Nasconde tutti gli importi dietro ••••, così puoi mostrare l'app a qualcuno senza far vedere le cifre. Vale solo su questo dispositivo e non tocca i dati né la sincronizzazione.</div>
+        <button class="btn ${privacyEnabled() ? '' : 'primary'}" id="privacy-toggle">${privacyEnabled() ? 'Mostra di nuovo gli importi' : 'Nascondi gli importi'}</button>
+      </div>
+
+      <div class="setcard">
         <h4>Aggiornamento app</h4>
         <div class="s-desc">Versione attuale: <strong>${APP_VERSION}</strong>. L'app si aggiorna da sola a ogni apertura; se resta indietro, forza da qui (i dati non si toccano).</div>
         <button class="btn primary" id="app-refresh">Riscarica l'app adesso</button>
@@ -965,6 +1039,26 @@ const Views = {
       }
     });
 
+    $('#rem-toggle', root).addEventListener('click', async () => {
+      DB.state.settings.remind = DB.state.settings.remind === false;
+      await DB.saveSettings();
+      toast(DB.state.settings.remind === false ? 'Promemoria disattivato' : 'Promemoria attivo ✓');
+      render();
+    });
+    const rn = $('#rem-notif', root);
+    if (rn) rn.addEventListener('click', async () => {
+      if (!('Notification' in window)) { toast('Questo dispositivo non supporta le notifiche.'); return; }
+      const p = await Notification.requestPermission();
+      toast(p === 'granted' ? 'Notifiche attive ✓' : 'Permesso non concesso: resta il promemoria dentro l\'app.');
+      render();
+    });
+
+    $('#privacy-toggle', root).addEventListener('click', () => {
+      setPrivacy(!privacyEnabled());
+      toast(privacyEnabled() ? 'Importi nascosti' : 'Importi di nuovo visibili');
+      render();
+    });
+
     $('#app-refresh', root).addEventListener('click', () => { toast('Riscarico l\'app…'); hardRefresh(true); });
 
     $$('[data-restore]', root).forEach(b => b.addEventListener('click', async () => {
@@ -994,6 +1088,28 @@ const Views = {
    farebbe perdere al browser la presa sul puntatore (pointerup non arriverebbe
    mai). Si muove con una trasformazione, le altre scorrono per fare spazio,
    e l'ordine vero si scrive una volta sola al rilascio. */
+/* Promemoria: se non segni nulla da piu' di 3 giorni te lo ricordo all'apertura.
+   Un avviso ad app chiusa richiederebbe un server di push: qui scatta quando
+   apri l'app (e come notifica di sistema, se l'hai permesso). */
+const notifOn = () => 'Notification' in window && Notification.permission === 'granted';
+const GIORNI_PROMEMORIA = 3;
+
+function checkPromemoria() {
+  if (DB.state.settings.remind === false) return;
+  const ultimo = DB.state.tx.reduce((max, t) => Math.max(max, t.createdAt || 0), 0);
+  if (!ultimo) return;
+  const giorni = Math.floor((Date.now() - ultimo) / 864e5);
+  if (giorni < GIORNI_PROMEMORIA) return;
+  if (localStorage.getItem('soldi-remind-day') === todayISO()) return; // uno al giorno basta
+  localStorage.setItem('soldi-remind-day', todayISO());
+
+  const testo = `Sono ${giorni} giorni che non segni un movimento: aggiorna i conti per non perdere il filo.`;
+  setTimeout(() => toast(testo), 900);
+  if (notifOn()) {
+    try { new Notification('Soldi', { body: testo, icon: 'icons/icon-192.png', tag: 'soldi-promemoria' }); } catch { /* alcuni browser la vogliono dal service worker */ }
+  }
+}
+
 let dragInCorso = false;
 function bindAccountReorder(root) {
   const rows = $$('.rowitem.draggable', root);
@@ -1557,6 +1673,7 @@ const Dialogs = {
   Sync.boot();
   Sync.onChange(() => { if (UI.route === 'impostazioni') render(); });
   Batti.boot();
+  checkPromemoria();
 
   // anti-cache: se online esiste una versione piu' nuova, ripulisci e ricarica da solo.
   // La query unica e' essenziale: la CDN di GitHub Pages tiene i file fino a ~10 minuti

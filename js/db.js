@@ -315,6 +315,8 @@ const DB = (() => {
       if (f.y && !t.date.startsWith(f.y)) continue;
       if (f.from && t.date < f.from) continue;
       if (f.to && t.date > f.to) continue;
+      if (f.from && t.date < f.from) continue;
+      if (f.to && t.date > f.to) continue;
       if (f.account && t.account !== f.account && t.toAccount !== f.account) continue;
       if (f.category && t.category !== f.category) continue;
       if (t.type === 'in') inc += t.amount;

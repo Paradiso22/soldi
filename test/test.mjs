@@ -89,6 +89,23 @@ assert.equal(m.accounts[0].name, 'Locale');    // metaRev locale piu' alto
 assert.equal(m.settings.imposta, 0.05);        // metaRev remoto piu' alto
 assert.equal(m.metaRev.settings, 200);
 
+// --- cestino: svuotarlo su un dispositivo non deve far riapparire i movimenti ---
+{
+  const base = { accounts: [], categories: [], settings: {}, metaRev: {} };
+  const ora = Date.now();
+  // il telefono ha svuotato il cestino (tombstone senza copia), il pc ce l'ha ancora
+  const locale = { ...base, tx: [], gone: [{ id: 'x', updatedAt: ora }] };
+  const remoto = { ...base, tx: [], gone: [{ id: 'x', updatedAt: ora, tx: { id: 'x', amount: 500 } }] };
+  const m1 = Sync.merge(locale, remoto);
+  assert.equal(m1.gone.length, 1);                 // il tombstone resta (serve alla sync)
+  assert.equal(m1.gone[0].tx, undefined);          // ma la copia ripristinabile no
+  const m2 = Sync.merge(remoto, locale);           // e vale in entrambi i versi
+  assert.equal(m2.gone[0].tx, undefined);
+  // un movimento eliminato non deve tornare in vita
+  const conTx = { ...base, tx: [{ id: 'x', amount: 500, updatedAt: ora - 1000 }], gone: [] };
+  assert.equal(Sync.merge(conTx, locale).tx.length, 0);
+}
+
 // --- ricorrenze: matematica delle date ---
 assert.equal(DB.nextRecurDate('2026-08-16', 'monthly'), '2026-09-16');
 assert.equal(DB.nextRecurDate('2026-01-31', 'monthly'), '2026-02-28'); // clampa a fine mese
