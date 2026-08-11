@@ -1,7 +1,7 @@
 /* app.js - Soldi. Router, viste, dialog. */
 'use strict';
 
-const APP_VERSION = 'v34';
+const APP_VERSION = 'v35';
 
 /* ---------- helpers ---------- */
 const EUR = new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' });
@@ -69,8 +69,20 @@ function catColorSlots(flow = 'out') {
     tot.set(t.category, (tot.get(t.category) || 0) + t.amount);
   }
   const slots = new Map();
-  [...tot.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8).forEach(([id], i) => slots.set(id, i));
+  // ogni categoria ha il suo posto: nessuna finisce in un calderone "Altro"
+  [...tot.entries()].sort((a, b) => b[1] - a[1]).forEach(([id], i) => slots.set(id, i));
   return slots;
+}
+
+/* Colore per posizione: le prime 8 sono la palette validata per il daltonismo,
+   dalla nona in poi la stessa palette schiarita (secondo giro) o scurita (terzo),
+   cosi' restano tutte distinguibili senza ripetere lo stesso identico colore. */
+function slotColor(i) {
+  const base = Charts.SERIES_CSS[i % 8];
+  const giro = Math.floor(i / 8);
+  if (giro === 0) return base;
+  if (giro === 1) return `color-mix(in srgb, ${base} 52%, #ffffff)`;
+  return `color-mix(in srgb, ${base} 62%, #1c1b1a)`;
 }
 
 /* Barre del periodo scelto: giorni se il periodo e' corto, mesi se e' medio,
@@ -124,27 +136,14 @@ function donutSlices(filt, flow = 'out') {
     byCat.set(k, (byCat.get(k) || 0) + t.amount);
   }
   // gli slot di colore sono per flusso: le categorie di incasso (es. Fatture)
-  // hanno il loro posto e non finiscono piu' dentro "Altro"
+  // hanno il loro posto, e ogni categoria resta visibile e selezionabile
   const slots = catColorSlots(flow);
-  const named = [], rest = [];
+  const out = [];
   for (const [id, v] of byCat) {
-    if (slots.has(id)) named.push({ id, label: DB.cat(id)?.name || id, value: v, color: Charts.SERIES_CSS[slots.get(id)] });
-    else rest.push({ id, v });
+    if (id === '__none__') { out.push({ id, label: 'Senza categoria', value: v, color: 'var(--s-none)' }); continue; }
+    out.push({ id, label: DB.cat(id)?.name || id, value: v, color: slotColor(slots.get(id) ?? 0) });
   }
-  named.sort((a, b) => b.value - a.value);
-  if (rest.length) {
-    const others = rest.filter(r => r.id !== '__none__');
-    const nocat = rest.find(r => r.id === '__none__');
-    if (others.length) named.push({
-      id: '__other__', color: 'var(--s-other)',
-      label: 'Altro (' + others.length + ')',
-      value: others.reduce((s, r) => s + r.v, 0),
-      // cosa c'e' dentro: la legenda lo puo' aprire, cosi' "Altro" non e' un mistero
-      parts: others.map(r => ({ id: r.id, label: DB.cat(r.id)?.name || r.id, value: r.v })).sort((a, b) => b.value - a.value),
-    });
-    if (nocat) named.push({ id: '__none__', label: 'Senza categoria', value: nocat.v, color: 'var(--s-none)' });
-  }
-  return named.filter(s => s.value > 0);
+  return out.filter(s => s.value > 0).sort((a, b) => b.value - a.value);
 }
 
 /* ---------- stato UI ---------- */
@@ -665,16 +664,10 @@ const Views = {
         <div class="legend" role="list">
           ${slices.map(s2 => `<button class="lg-row" role="listitem" data-cat="${s2.id}">
             <span class="swatch" style="background:${s2.color}"></span>
-            <span class="lg-name">${esc(s2.label)}${s2.parts ? (st.openOther ? ' ▾' : ' ▸') : ''}</span>
+            <span class="lg-name">${esc(s2.label)}</span>
             <span class="lg-val money">${fmt(s2.value)}</span>
             <span class="lg-pct money">${Math.round(s2.value / tot * 100)}%</span>
-          </button>
-          ${s2.parts && st.openOther ? s2.parts.map(p => `<button class="lg-row lg-sub" role="listitem" data-cat="${p.id}">
-            <span class="swatch" style="background:var(--s-other);opacity:.5"></span>
-            <span class="lg-name">${esc(p.label)}</span>
-            <span class="lg-val money">${fmt(p.value)}</span>
-            <span class="lg-pct money">${Math.round(p.value / tot * 100)}%</span>
-          </button>`).join('') : ''}`).join('')}
+          </button>`).join('')}
         </div>`}
       </div>
 
@@ -720,8 +713,6 @@ const Views = {
 
     $$('.lg-row', root).forEach(r => r.addEventListener('click', () => {
       const id = r.dataset.cat;
-      // "Altro" non porta da nessuna parte: si apre e mostra cosa contiene
-      if (id === '__other__') { st.openOther = !st.openOther; render(); return; }
       UI.mov = { scope: st.scope, anchor: st.anchor, custom: st.custom, account: null, category: id === '__none__' ? '__none__' : id, search: '', type: st.flow };
       location.hash = '#/movimenti';
     }));
