@@ -1,7 +1,7 @@
 /* sw.js - offline first */
 'use strict';
 
-const VERSION = 'soldi-v16';
+const VERSION = 'soldi-v17';
 const ASSETS = [
   './',
   'index.html',

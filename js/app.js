@@ -1,7 +1,7 @@
 /* app.js - Soldi. Router, viste, dialog. */
 'use strict';
 
-const APP_VERSION = 'v16';
+const APP_VERSION = 'v17';
 
 /* ---------- helpers ---------- */
 const EUR = new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' });
@@ -16,6 +16,18 @@ const todayISO = () => {
 };
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
+
+// ricarica pulita: svuota le cache (e opzionalmente il service worker) poi riparte da rete
+async function hardRefresh(nukeSw) {
+  try {
+    if (nukeSw && 'serviceWorker' in navigator) {
+      const regs = await navigator.serviceWorker.getRegistrations();
+      for (const r of regs) await r.unregister();
+    }
+    for (const k of await caches.keys()) await caches.delete(k);
+  } catch { /* si prova comunque */ }
+  location.href = location.pathname + '?r=' + Date.now() + location.hash;
+}
 
 function toast(msg) {
   const t = $('#toast');
@@ -690,6 +702,12 @@ const Views = {
         <input type="file" id="bk-file" accept=".soldi" hidden>
       </div>
 
+      <div class="setcard">
+        <h4>Aggiornamento app</h4>
+        <div class="s-desc">Versione attuale: <strong>${APP_VERSION}</strong>. L'app si aggiorna da sola a ogni apertura; se resta indietro, forza da qui (i dati non si toccano).</div>
+        <button class="btn primary" id="app-refresh">Riscarica l'app adesso</button>
+      </div>
+
       <div class="setcard" style="border-color:rgba(230,103,103,.35)">
         <h4 style="color:var(--danger)">Zona a rischio</h4>
         <div class="s-desc">Cancella tutti i dati da questo dispositivo. Irreversibile (fai prima un backup).</div>
@@ -760,6 +778,8 @@ const Views = {
       e.target.value = '';
     });
     $('#bk-csv', root).addEventListener('click', () => { Backup.exportCSV(); toast('CSV esportato ✓'); });
+
+    $('#app-refresh', root).addEventListener('click', () => { toast('Riscarico l\'app…'); hardRefresh(true); });
 
     $('#wipe', root).addEventListener('click', () => Dialogs.confirm(
       'Cancellare tutto?',
@@ -1202,17 +1222,38 @@ const Dialogs = {
       const txt = await (await fetch('sw.js', { cache: 'no-store' })).text();
       const m = txt.match(/soldi-(v\d+)/);
       if (m && m[1] !== APP_VERSION) {
-        if (sessionStorage.getItem('upd-' + m[1])) return;
-        sessionStorage.setItem('upd-' + m[1], '1');
-        const regs = await navigator.serviceWorker.getRegistrations();
-        for (const r of regs) await r.update();
-        for (const k of await caches.keys()) await caches.delete(k);
-        location.reload();
+        const k = 'upd-' + m[1];
+        if (Date.now() - (+sessionStorage.getItem(k) || 0) < 60000) return; // riprova al massimo ogni minuto
+        sessionStorage.setItem(k, String(Date.now()));
+        await hardRefresh(false);
       }
     } catch { /* offline: pazienza */ }
   }
   checkForUpdate();
-  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') checkForUpdate(); });
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { checkForUpdate(); } });
+
+  // tira-per-aggiornare: nelle PWA installate il gesto non esiste, lo forniamo noi
+  const ptr = document.createElement('div');
+  ptr.id = 'ptr';
+  ptr.textContent = '↻ Rilascia per aggiornare';
+  document.body.appendChild(ptr);
+  let pullStart = null, pullReady = false;
+  document.addEventListener('touchstart', e => {
+    pullStart = (window.scrollY === 0 && !document.querySelector('dialog[open]')) ? e.touches[0].clientY : null;
+    pullReady = false;
+  }, { passive: true });
+  document.addEventListener('touchmove', e => {
+    if (pullStart == null) return;
+    const d = e.touches[0].clientY - pullStart;
+    pullReady = d > 90;
+    ptr.classList.toggle('show', d > 30);
+    ptr.classList.toggle('ready', pullReady);
+  }, { passive: true });
+  document.addEventListener('touchend', () => {
+    ptr.classList.remove('show', 'ready');
+    if (pullReady) { pullReady = false; toast('Aggiorno…'); hardRefresh(false); }
+    pullStart = null;
+  });
 
   if ('serviceWorker' in navigator && location.protocol !== 'file:') {
     navigator.serviceWorker.register('sw.js').catch(() => {});

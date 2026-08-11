@@ -456,6 +456,17 @@ table.sheet { border-collapse: collapse; width: 100%; font-size: .85rem; min-wid
 .empty .e-marker { font-family: var(--display); font-size: 1.25rem; font-weight: 700; color: var(--ink-2); margin-bottom: 6px; }
 .empty .ic { width: 36px; height: 36px; margin-bottom: 10px; opacity: .5; }
 
+/* tira-per-aggiornare */
+#ptr {
+  position: fixed; top: calc(10px + env(safe-area-inset-top)); left: 50%;
+  transform: translate(-50%, -70px); z-index: 95;
+  background: var(--ink); color: #fff; font-weight: 800; font-size: .8rem;
+  padding: 9px 17px; border-radius: 999px; pointer-events: none; opacity: .85;
+  transition: transform .2s var(--ease-pop), background .15s;
+}
+#ptr.show { transform: translate(-50%, 0); }
+#ptr.ready { background: var(--brand); opacity: 1; }
+
 /* toast */
 #toast {
   position: fixed; left: 50%; transform: translateX(-50%) translateY(20px);
