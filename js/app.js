@@ -1,7 +1,7 @@
 /* app.js - Soldi. Router, viste, dialog. */
 'use strict';
 
-const APP_VERSION = 'v45';
+const APP_VERSION = 'v46';
 
 /* ---------- helpers ---------- */
 const EUR = new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' });
@@ -629,7 +629,7 @@ const Views = {
         <span style="flex:1">
           <span class="s-label">${delMese.length
             ? 'Da pagare entro fine ' + meseNome + ' · ' + delMese.length + ' scadenz' + (delMese.length === 1 ? 'a' : 'e')
-            : 'Niente da pagare ' + (/^[aeiou]/.test(meseNome) ? 'ad ' : 'a ') + meseNome + ' · la prossima ' + fmtShort(prossima.date)}</span><br>
+            : 'Niente da pagare ' + (meseNome[0] === 'a' ? 'ad ' : 'a ') + meseNome + ' · la prossima ' + fmtShort(prossima.date)}</span><br>
           <span class="s-val money">${fmt(adesso)}</span><br>
           <span class="s-label">Su ${esc(contoF24 ? contoF24.name : 'nessun conto')} hai ${fmt(inCassa)}: ${adesso > inCassa
             ? 'ti mancano ' + fmt(adesso - inCassa)
