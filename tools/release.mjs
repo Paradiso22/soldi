@@ -16,8 +16,11 @@ const write = (f, s) => writeFileSync(p(f), s);
 
 const cur = read('js/app.js').match(/const APP_VERSION = '(v\d+)'/)?.[1];
 if (!cur) throw new Error('APP_VERSION non trovata in js/app.js');
-const next = process.argv[2] || 'v' + (parseInt(cur.slice(1), 10) + 1);
-const n = next.replace(/^v/, '');
+// la "v" la mette lo script: passare "39" o "v39" deve dare lo stesso risultato,
+// se no APP_VERSION diventa '39' e al rilascio dopo non la si ritrova piu'
+const n = String(process.argv[2] || parseInt(cur.slice(1), 10) + 1).replace(/^v/, '');
+if (!/^\d+$/.test(n)) throw new Error(`versione non valida: ${process.argv[2]}`);
+const next = 'v' + n;
 
 write('js/app.js', read('js/app.js').replace(/const APP_VERSION = 'v\d+'/, `const APP_VERSION = '${next}'`));
 
