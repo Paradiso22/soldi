@@ -237,6 +237,10 @@ h3.rule::after { content: ""; flex: 1; height: 1px; background: var(--line); }
 .setaside .ic { color: var(--amber); width: 28px; height: 28px; }
 .setaside .s-label { font-size: .84rem; color: var(--ink-2); font-weight: 800; }
 .setaside .s-val { font-size: 1.35rem; font-weight: 900; color: var(--amber); }
+/* scadenze che superano quello che hai in cassa: si vede subito */
+.setaside.allarme { background: var(--neg-soft); }
+.setaside.allarme .ic { color: var(--neg); }
+.setaside.allarme .s-val { color: var(--neg); }
 
 /* ---------- righe movimento ---------- */
 .txlist { list-style: none; }

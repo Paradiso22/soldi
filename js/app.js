@@ -1,7 +1,7 @@
 /* app.js - Soldi. Router, viste, dialog. */
 'use strict';
 
-const APP_VERSION = 'v36';
+const APP_VERSION = 'v38';
 
 /* ---------- helpers ---------- */
 const EUR = new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' });
@@ -277,7 +277,10 @@ const Views = {
     const ym = todayISO().slice(0, 7);
     const m = DB.sums({ ym });
     const y = new Date().getFullYear();
-    const daParte = DB.invoicesOfYear(y).reduce((s, t) => s + DB.invoiceCalc(t).daParte, 0);
+    // scadenze fiscali vere (quelle che ti dice il commercialista), non piu' una stima
+    const scad = scadenzeFiscali();
+    const daPagare = scad.reduce((s, t) => s + t.amount, 0);
+    const prossima = scad[0];
     const today = todayISO();
     const recent = DB.state.tx.filter(t => t.date <= today).slice(0, matchMedia('(min-width: 920px)').matches ? 11 : 6);
     const upcoming = DB.state.tx.filter(t => t.date > today).sort((a, b) => a.date.localeCompare(b.date)).slice(0, 5);
@@ -306,11 +309,14 @@ const Views = {
           </button>`).join('')}
       </div>
 
-      <button class="setaside" data-goto="fatture">
+      <button class="setaside ${daPagare > total ? 'allarme' : ''}" data-goto="fatture">
         <svg class="ic"><use href="#i-invoice"/></svg>
         <span style="flex:1">
-          <span class="s-label">Da mettere da parte per tasse e INPS · ${y}</span><br>
-          <span class="s-val money">${fmt(daParte)}</span>
+          <span class="s-label">${daPagare
+            ? 'Tasse da pagare · la prossima ' + fmtShort(prossima.date) + ' (' + fraQuanto(prossima.date) + ')'
+            : 'Nessuna scadenza fiscale inserita'}</span><br>
+          <span class="s-val money">${fmt(daPagare)}</span>
+          ${daPagare > total ? `<br><span class="s-label" style="color:var(--neg)">Ti mancano ${fmt(daPagare - total)} rispetto a quello che hai in cassa</span>` : ''}
         </span>
         <svg class="ic" style="width:18px;color:var(--chalk-3)"><use href="#i-right"/></svg>
       </button>
@@ -552,10 +558,39 @@ const Views = {
       return { m: i, n: list.length, lordo: sum('lordo'), bollo: sum('bollo'), rivalsaAmt: sum('rivalsaAmt'), onorario: sum('onorario'), imposta: sum('imposta'), inps: sum('inps'), daParte: sum('daParte'), netto: sum('netto') };
     }).filter(r => r.n > 0);
 
-    return `
-      <h2 class="viewtitle">Fatture</h2>
-      <div class="subtitle">Regime forfettario · coefficiente ${Math.round(s.coeff * 100)}% · imposta ${Math.round(s.imposta * 100)}% · INPS ${(s.inps * 100).toFixed(2).replace(/\.?0+$/, '')}%</div>
+    const scad = scadenzeFiscali();
+    const daPagare = scad.reduce((a, t) => a + t.amount, 0);
+    const inCassa = [...DB.balances().values()].reduce((a, b) => a + b, 0);
 
+    return `
+      <h2 class="viewtitle">Fatture e tasse</h2>
+      <div class="subtitle">Regime forfettario · le scadenze sono quelle del commercialista</div>
+
+      <h3 class="rule">Scadenze fiscali</h3>
+      ${scad.length ? `
+      <div class="setaside ${daPagare > inCassa ? 'allarme' : ''}" style="cursor:default;margin-bottom:12px">
+        <svg class="ic"><use href="#i-invoice"/></svg>
+        <span style="flex:1">
+          <span class="s-label">Totale da pagare · ${scad.length} scadenz${scad.length === 1 ? 'a' : 'e'}</span><br>
+          <span class="s-val money">${fmt(daPagare)}</span><br>
+          <span class="s-label">${daPagare > inCassa
+            ? 'In cassa hai ' + fmt(inCassa) + ': ti mancano ' + fmt(daPagare - inCassa)
+            : 'In cassa hai ' + fmt(inCassa) + ': coperte ✓'}</span>
+        </span>
+      </div>
+      <ul class="txlist">${scad.map(t => `<li><button class="txrow" data-id="${t.id}">
+        <span class="t-emoji" aria-hidden="true">📅</span>
+        <span class="t-main">
+          <span class="t-desc">${esc(t.desc)}</span>
+          <span class="t-sub">${fmtShort(t.date)} · ${fraQuanto(t.date)}${DB.acc(t.account) ? ' · ' + esc(DB.acc(t.account).name) : ''}</span>
+        </span>
+        <span class="t-amt money neg">- ${fmt(t.amount)}</span>
+      </button></li>`).join('')}</ul>`
+      : `<div class="empty" style="padding:22px"><svg class="ic"><use href="#i-invoice"/></svg>
+        <div class="e-marker">Nessuna scadenza inserita</div>Copia qui gli F24 che ti indica Fiscozen: importo e data di scadenza.</div>`}
+      <button class="btn ${scad.length ? '' : 'primary'}" id="f-add-scad" style="margin:10px 0 4px"><svg class="ic"><use href="#i-plus"/></svg> Aggiungi scadenza fiscale</button>
+
+      <h3 class="rule">Fatture emesse</h3>
       <div class="periodnav">
         <button class="iconbtn" id="f-prev" aria-label="Anno precedente"><svg class="ic"><use href="#i-left"/></svg></button>
         <span class="p-label">${y}</span>
@@ -567,53 +602,45 @@ const Views = {
         <div class="e-marker">Nessuna fattura nel ${y}</div>Quando incassi una fattura, segnala qui: il conto delle tasse si fa da solo.</div>` : `
 
       <div class="tags-row" style="padding-top:2px">
-        <div class="tag-card" style="--tilt:-.7deg;cursor:default"><span class="t-name">Fatturato lordo</span><span class="t-amount money">${fmt(tot('lordo'))}</span></div>
-        <div class="tag-card" style="--tilt:.6deg;cursor:default"><span class="t-name">Netto (dopo accantonamenti)</span><span class="t-amount money pos">${fmt(tot('netto'))}</span></div>
-        <div class="tag-card" style="--tilt:-.5deg;cursor:default;outline:1px dashed rgba(242,201,76,.5)"><span class="t-name" style="color:var(--tag)">Da mettere da parte</span><span class="t-amount money" style="color:var(--tag)">${fmt(tot('daParte'))}</span></div>
-        <div class="tag-card" style="--tilt:.8deg;cursor:default"><span class="t-name">di cui imposta ${Math.round(s.imposta * 100)}%</span><span class="t-amount money">${fmt(tot('imposta'))}</span></div>
-        <div class="tag-card" style="--tilt:-.9deg;cursor:default"><span class="t-name">di cui INPS</span><span class="t-amount money">${fmt(tot('inps'))}</span></div>
+        <div class="tag-card" style="cursor:default"><span class="t-name">Fatturato lordo ${y}</span><span class="t-amount money">${fmt(tot('lordo'))}</span></div>
+        <div class="tag-card" style="cursor:default"><span class="t-name">Numero fatture</span><span class="t-amount money">${invs.length}</span></div>
       </div>
 
       <h3 class="rule">Le fatture del ${y}</h3>
       <div class="tablewrap"><table class="sheet">
-        <thead><tr><th scope="col">Fattura</th><th scope="col">Lordo</th><th scope="col">Da parte</th><th scope="col">Netto</th><th scope="col">Imposta</th><th scope="col">INPS</th><th scope="col" class="hm">Bollo</th><th scope="col" class="hm">Rivalsa 4%</th></tr></thead>
+        <thead><tr><th scope="col">Fattura</th><th scope="col">Incassato</th><th scope="col">Conto</th><th scope="col" class="hm">Bollo</th><th scope="col" class="hm">Rivalsa 4%</th></tr></thead>
         <tbody>
           ${calcs.map(({ t, c }) => `<tr data-id="${t.id}" style="cursor:pointer" title="Modifica">
             <td><strong>${esc(t.desc)}</strong><br><span class="mut" style="font-size:.74rem">${fmtDate(t.date, t.dayUnknown)}</span></td>
             <td class="money">${fmt(c.lordo)}</td>
-            <td class="money" style="color:var(--tag)">${fmt(c.daParte)}</td>
-            <td class="money pos">${fmt(c.netto)}</td>
-            <td class="money">${fmt(c.imposta)}</td>
-            <td class="money">${fmt(c.inps)}</td>
+            <td>${DB.acc(t.account) ? esc(DB.acc(t.account).name) : '-'}</td>
             <td class="money hm">${c.bollo ? fmt(c.bollo) : '-'}</td>
             <td class="money hm">${c.rivalsaAmt ? fmt(c.rivalsaAmt) : '-'}</td>
           </tr>`).join('')}
         </tbody>
         <tfoot><tr><td>Totale ${y}</td>
           <td class="money">${fmt(tot('lordo'))}</td>
-          <td class="money" style="color:var(--tag)">${fmt(tot('daParte'))}</td>
-          <td class="money pos">${fmt(tot('netto'))}</td>
-          <td class="money">${fmt(tot('imposta'))}</td><td class="money">${fmt(tot('inps'))}</td>
+          <td></td>
           <td class="money hm">${fmt(tot('bollo'))}</td><td class="money hm">${fmt(tot('rivalsaAmt'))}</td></tr></tfoot>
       </table></div>
 
       <h3 class="rule">Mese per mese</h3>
       <div class="tablewrap"><table class="sheet">
-        <thead><tr><th scope="col">Mese</th><th scope="col">N.</th><th scope="col">Lordo</th><th scope="col">Onorario</th><th scope="col">Imposta</th><th scope="col">INPS</th><th scope="col">Da parte</th><th scope="col">Netto</th></tr></thead>
+        <thead><tr><th scope="col">Mese</th><th scope="col">N. fatture</th><th scope="col">Incassato</th></tr></thead>
         <tbody>${perMonth.map(r => `<tr>
-          <td>${MESI[r.m]}</td><td class="money">${r.n}</td>
-          <td class="money">${fmt(r.lordo)}</td><td class="money">${fmt(r.onorario)}</td>
-          <td class="money">${fmt(r.imposta)}</td><td class="money">${fmt(r.inps)}</td>
-          <td class="money" style="color:var(--tag)">${fmt(r.daParte)}</td><td class="money pos">${fmt(r.netto)}</td>
+          <td>${MESI[r.m]}</td><td class="money">${r.n}</td><td class="money">${fmt(r.lordo)}</td>
         </tr>`).join('')}</tbody>
       </table></div>`}
 
-      <p class="mut" style="font-size:.78rem;margin-top:14px">I calcoli replicano il tuo foglio: accantonamento = imposta + INPS sull'imponibile (lordo - bollo) × coefficiente. Percentuali modificabili nelle <a href="#/impostazioni" style="color:var(--chalk-2)">impostazioni</a> - verificale col commercialista.</p>`;
+      <p class="mut" style="font-size:.78rem;margin-top:14px">Le tasse non sono più stimate dall'app: quanto e quando pagare lo dice il tuo commercialista, e lo copi nelle scadenze qui sopra. Il motivo è che l'imposta reale dipende da acconti, saldo e contributi dedotti, che una stima per fattura non può conoscere.</p>`;
   },
   bindFatture(root) {
     $('#f-prev', root).addEventListener('click', () => { UI.fatYear--; render(); });
     $('#f-next', root).addEventListener('click', () => { UI.fatYear++; render(); });
     $('#f-add', root).addEventListener('click', () => Dialogs.txForm(null, { type: 'in', category: 'fatture', invoice: { bollo: true, rivalsa: false } }));
+    $('#f-add-scad', root).addEventListener('click', () => Dialogs.txForm(null, {
+      type: 'out', category: catTasse(), desc: 'F24', date: todayISO(),
+    }));
     $$('tbody tr[data-id]', root).forEach(r => r.addEventListener('click', () => Dialogs.txForm(DB.state.tx.find(t => t.id === r.dataset.id))));
   },
 
@@ -1099,6 +1126,29 @@ function checkPromemoria() {
   if (notifOn()) {
     try { new Notification('Soldi', { body: testo, icon: 'icons/icon-192.png', tag: 'soldi-promemoria' }); } catch { /* alcuni browser la vogliono dal service worker */ }
   }
+}
+
+/* Scadenze fiscali: sono normali movimenti futuri in "Tasse e Contributi".
+   Cosi' non tolgono soldi finche' non arriva la data, compaiono in "In arrivo"
+   e viaggiano nella sync senza codice nuovo. */
+function catTasse() {
+  const c = DB.state.categories.find(x => /tass|contribut/i.test(x.name) && !x.archived);
+  return c ? c.id : null;
+}
+function scadenzeFiscali() {
+  const oggi = todayISO();
+  const tid = catTasse();
+  return DB.state.tx
+    .filter(t => t.type === 'out' && t.date > oggi && t.category && t.category === tid)
+    .sort((a, b) => a.date.localeCompare(b.date));
+}
+function fraQuanto(iso) {
+  const g = Math.ceil((new Date(iso) - new Date(todayISO())) / 864e5);
+  if (g <= 0) return 'oggi';
+  if (g === 1) return 'domani';
+  if (g < 30) return 'tra ' + g + ' giorni';
+  const m = Math.round(g / 30);
+  return 'tra ' + m + (m === 1 ? ' mese' : ' mesi');
 }
 
 let dragInCorso = false;
