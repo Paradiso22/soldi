@@ -1,7 +1,7 @@
 /* app.js - Soldi. Router, viste, dialog. */
 'use strict';
 
-const APP_VERSION = 'v42';
+const APP_VERSION = 'v43';
 
 /* ---------- helpers ---------- */
 const EUR = new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' });
@@ -515,9 +515,9 @@ const Views = {
 
     return `
       <h2 class="viewtitle">Movimenti</h2>
-      <div class="subtitle">${list.length} moviment${list.length === 1 ? 'o' : 'i'} ·
-        <span class="pos money">+${fmt(tin)}</span> · <span class="neg money">-${fmt(tout)}</span> ·
-        <span class="money ${tin - tout >= 0 ? 'pos' : 'neg'}">= ${fmtS(tin - tout)}</span>${nFuturi ? ' · ' + nFuturi + ' in arrivo' : ''}</div>
+      <div class="subtitle">${list.length} moviment${list.length === 1 ? 'o' : 'i'}${nFuturi ? ' · ' + nFuturi + ' in arrivo' : ''}
+        <span class="sub-tot">finora <span class="pos money">+${fmt(tin)}</span> · <span class="neg money">-${fmt(tout)}</span> ·
+        <span class="money ${tin - tout >= 0 ? 'pos' : 'neg'}">= ${fmtS(tin - tout)}</span></span></div>
 
       <div class="periodnav">
         <button class="iconbtn" id="m-prev" aria-label="Periodo precedente" ${hasNav ? '' : 'disabled'}><svg class="ic"><use href="#i-left"/></svg></button>
