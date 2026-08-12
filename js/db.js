@@ -46,6 +46,7 @@ const DB = (() => {
     rivalsa: 0.04,   // rivalsa 4% (opzionale per fattura)
     bollo: 200,      // marca da bollo in centesimi
     geminiKey: '',
+    contoTasse: null, // conto da cui escono gli F24 (null = primo conto bancario)
   };
 
   function open() {

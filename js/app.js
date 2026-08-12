@@ -1,7 +1,7 @@
 /* app.js - Soldi. Router, viste, dialog. */
 'use strict';
 
-const APP_VERSION = 'v39';
+const APP_VERSION = 'v40';
 
 /* ---------- helpers ---------- */
 const EUR = new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' });
@@ -152,6 +152,7 @@ const UI = {
   mov: { scope: 'month', anchor: todayISO(), custom: null, account: null, category: null, search: '', type: null },
   fatYear: new Date().getFullYear(),
   stat: { scope: 'month', anchor: todayISO(), custom: null, flow: 'out', table: false },
+  home: { scope: 'month', anchor: todayISO(), custom: null },
   homeFlow: 'out',
   lastAdded: null,
 };
@@ -274,29 +275,45 @@ const Views = {
   home() {
     const bal = DB.balances();
     const total = [...bal.values()].reduce((a, b) => a + b, 0);
-    const ym = todayISO().slice(0, 7);
-    const m = DB.sums({ ym });
-    const y = new Date().getFullYear();
+    const range = rangeFor(UI.home.scope, UI.home.anchor, UI.home.custom);
+    const hasNav = ['day', 'week', 'month', 'year'].includes(UI.home.scope);
+    const filt = { from: range.from, to: range.to };
+    const m = DB.sums(filt);
     // scadenze fiscali vere (quelle che ti dice il commercialista), non piu' una stima.
     // Le "previste" restano fuori dal numero grande: sono stime che cambiano a ogni fattura.
-    const scad = scadenzeFiscali();
+    // Seguono il periodo scelto: se guardi agosto vedi cosa scade in agosto.
+    const dentro = t => (!range.from || t.date >= range.from) && (!range.to || t.date <= range.to);
+    const scad = scadenzeFiscali().filter(dentro);
     const dovute = scad.filter(t => !t.fisco?.prevista);
     const previste = scad.filter(t => t.fisco?.prevista);
     const daPagare = dovute.reduce((s, t) => s + t.amount, 0);
     const stimate = previste.reduce((s, t) => s + t.amount, 0);
     const prossima = dovute[0];
+    // gli F24 escono da un conto solo: e' quel saldo che deve bastare
+    const saldoF24 = bal.get(contoTasse()) || 0;
     const today = todayISO();
     const recent = DB.state.tx.filter(t => t.date <= today).slice(0, matchMedia('(min-width: 920px)').matches ? 11 : 6);
     const upcoming = DB.state.tx.filter(t => t.date > today).sort((a, b) => a.date.localeCompare(b.date)).slice(0, 5);
     const noCat = DB.state.tx.filter(t => !t.category && t.type !== 'transfer').length;
 
     return `<div class="home-grid"><div class="colA">
+      <div class="periodnav">
+        <button class="iconbtn" id="h-prev" aria-label="Periodo precedente" ${hasNav ? '' : 'disabled'}><svg class="ic"><use href="#i-left"/></svg></button>
+        <span class="p-label">${range.label}</span>
+        <button class="iconbtn" id="h-next" aria-label="Periodo successivo" ${hasNav ? '' : 'disabled'}><svg class="ic"><use href="#i-right"/></svg></button>
+      </div>
+      <div class="chip-row scroll">
+        ${[['week', 'Settimana'], ['month', 'Mese'], ['year', 'Anno']].map(([s2, l]) =>
+          `<button class="chip" data-hscope="${s2}" aria-pressed="${UI.home.scope === s2}">${l}</button>`).join('')}
+        <button class="chip" data-hscope="all" aria-pressed="${UI.home.scope === 'all'}">Tutto</button>
+      </div>
+
       <section class="hero">
         <div class="label">In cassa adesso</div>
         <div class="total money">${fmt(total)}</div>
         <div class="underline" aria-hidden="true"></div>
         <div class="monthline">
-          <span>${MESI[+ym.slice(5) - 1]}:</span>
+          <span>${range.label}:</span>
           <span class="m-eq">
             <span class="pos money"><svg class="ic tri" aria-hidden="true"><use href="#i-tri-up"/></svg> ${fmt(m.in)}</span>
             <span class="neg money"><svg class="ic tri" aria-hidden="true"><use href="#i-tri-down"/></svg> ${fmt(m.out)}</span>
@@ -313,15 +330,14 @@ const Views = {
           </button>`).join('')}
       </div>
 
-      <button class="setaside ${daPagare > total ? 'allarme' : ''}" data-goto="fatture">
+      <button class="setaside ${daPagare > saldoF24 ? 'allarme' : ''}" data-goto="fatture">
         <svg class="ic"><use href="#i-invoice"/></svg>
         <span style="flex:1">
-          <span class="s-label">${daPagare
-            ? 'Tasse da pagare · la prossima ' + fmtShort(prossima.date) + ' (' + fraQuanto(prossima.date) + ')'
-            : 'Nessuna scadenza fiscale inserita'}</span><br>
+          <span class="s-label">${daPagare ? 'Tasse da pagare' : 'Nessuna scadenza fiscale'} · ${esc(range.label)}</span><br>
           <span class="s-val money">${fmt(daPagare)}</span>
-          ${daPagare > total ? `<br><span class="s-label" style="color:var(--neg)">Ti mancano ${fmt(daPagare - total)} rispetto a quello che hai in cassa</span>` : ''}
-          ${stimate ? `<br><span class="s-label">+ ${fmt(stimate)} previsti più avanti (stima Fiscozen)</span>` : ''}
+          ${prossima ? `<br><span class="s-label">La prossima ${fmtShort(prossima.date)}, ${fraQuanto(prossima.date)}</span>` : ''}
+          ${daPagare > saldoF24 ? `<br><span class="s-label" style="color:var(--neg)">Su ${esc(DB.acc(contoTasse())?.name || 'quel conto')} hai ${fmt(saldoF24)}: ti mancano ${fmt(daPagare - saldoF24)}</span>` : ''}
+          ${stimate ? `<br><span class="s-label">+ ${fmt(stimate)} previsti nel periodo (stima Fiscozen)</span>` : ''}
         </span>
         <svg class="ic" style="width:18px;color:var(--chalk-3)"><use href="#i-right"/></svg>
       </button>
@@ -330,16 +346,16 @@ const Views = {
         <svg class="ic" style="width:14px;height:14px"><use href="#i-alert"/></svg> ${noCat} movimenti senza categoria - sistemali</button>` : ''}
 
       ${(m.out > 0 || m.in > 0) ? (() => {
-        const slices = donutSlices({ ym }, UI.homeFlow);
+        const slices = donutSlices(filt, UI.homeFlow);
         return `<div class="chartcard" id="home-chart" style="margin-top:16px;cursor:pointer">
         <div style="display:flex;align-items:center;justify-content:space-between;gap:10px">
-          <h4>${UI.homeFlow === 'out' ? 'Dove vanno questo mese' : 'Da dove arrivano questo mese'}</h4>
+          <h4>${UI.homeFlow === 'out' ? 'Dove vanno' : 'Da dove arrivano'}</h4>
           <div class="segment" style="flex:0 0 auto;padding:3px">
             <button type="button" data-hflow="out" data-t="out" aria-pressed="${UI.homeFlow === 'out'}" style="padding:6px 12px">Uscite</button>
             <button type="button" data-hflow="in" data-t="in" aria-pressed="${UI.homeFlow === 'in'}" style="padding:6px 12px">Entrate</button>
           </div>
         </div>
-        <div class="c-sub">${MESI[+ym.slice(5) - 1]} · tocca per tutte le statistiche</div>
+        <div class="c-sub">${range.label} · tocca per tutte le statistiche</div>
         <div id="home-donut"></div>
         <div class="legend">
           ${slices.slice(0, 4).map(s2 => `<span class="lg-row">
@@ -372,6 +388,13 @@ const Views = {
       </div></div>`;
   },
   bindHome(root) {
+    $('#h-prev', root).addEventListener('click', () => { UI.home.anchor = shiftAnchor(UI.home.scope, UI.home.anchor, -1); render(); });
+    $('#h-next', root).addEventListener('click', () => { UI.home.anchor = shiftAnchor(UI.home.scope, UI.home.anchor, 1); render(); });
+    $$('[data-hscope]', root).forEach(b => b.addEventListener('click', () => {
+      UI.home.scope = b.dataset.hscope;
+      UI.home.anchor = todayISO(); // cambiando taglio si riparte da oggi
+      render();
+    }));
     $$('.tag-card', root).forEach(b => b.addEventListener('click', () => {
       UI.mov = { scope: 'all', anchor: todayISO(), custom: null, account: b.dataset.acc, category: null, search: '', type: null };
       location.hash = '#/movimenti';
@@ -381,8 +404,8 @@ const Views = {
     if (fx) fx.addEventListener('click', () => { UI.mov = { scope: 'all', anchor: todayISO(), custom: null, account: null, category: '__none__', search: '', type: null }; location.hash = '#/movimenti'; });
     const hc = $('#home-chart', root);
     if (hc) {
-      const ym = todayISO().slice(0, 7);
-      const slices = donutSlices({ ym }, UI.homeFlow);
+      const r2 = rangeFor(UI.home.scope, UI.home.anchor, UI.home.custom);
+      const slices = donutSlices({ from: r2.from, to: r2.to }, UI.homeFlow);
       const tot = slices.reduce((s, x) => s + x.value, 0);
       if (tot) Charts.donut($('#home-donut', root), slices, { centerLabel: UI.homeFlow === 'out' ? 'Uscite' : 'Entrate', centerValue: fmt(tot), fmt });
       $$('[data-hflow]', hc).forEach(b => b.addEventListener('click', e => {
@@ -391,7 +414,8 @@ const Views = {
         render();
       }));
       hc.addEventListener('click', () => {
-        UI.stat = { scope: 'month', anchor: todayISO(), custom: null, flow: UI.homeFlow, table: false };
+        // le statistiche si aprono sullo stesso periodo che stavi guardando
+        UI.stat = { ...UI.home, flow: UI.homeFlow, table: false };
         location.hash = '#/statistiche';
       });
     }
@@ -568,7 +592,9 @@ const Views = {
     const previste = scad.filter(t => t.fisco?.prevista);
     const daPagare = dovute.reduce((a, t) => a + t.amount, 0);
     const stimate = previste.reduce((a, t) => a + t.amount, 0);
-    const inCassa = [...DB.balances().values()].reduce((a, b) => a + b, 0);
+    // gli F24 escono da un conto solo: e' quel saldo che deve bastare, non il totale
+    const contoF24 = DB.acc(contoTasse());
+    const inCassa = DB.balances().get(contoTasse()) || 0;
     const rigaScad = t => `<li><button class="txrow" data-id="${t.id}">
         <span class="t-emoji" aria-hidden="true">${t.fisco?.prevista ? '🔮' : '📅'}</span>
         <span class="t-main">
@@ -589,9 +615,9 @@ const Views = {
         <span style="flex:1">
           <span class="s-label">Totale da pagare · ${dovute.length} scadenz${dovute.length === 1 ? 'a' : 'e'}</span><br>
           <span class="s-val money">${fmt(daPagare)}</span><br>
-          <span class="s-label">${daPagare > inCassa
-            ? 'In cassa hai ' + fmt(inCassa) + ': ti mancano ' + fmt(daPagare - inCassa)
-            : 'In cassa hai ' + fmt(inCassa) + ': coperte ✓'}</span>
+          <span class="s-label">Su ${esc(contoF24 ? contoF24.name : 'nessun conto')} hai ${fmt(inCassa)}: ${daPagare > inCassa
+            ? 'ti mancano ' + fmt(daPagare - inCassa)
+            : 'coperte ✓'}</span>
         </span>
       </div>
       <ul class="txlist">${dovute.map(rigaScad).join('')}</ul>`
@@ -656,7 +682,7 @@ const Views = {
     $('#f-next', root).addEventListener('click', () => { UI.fatYear++; render(); });
     $('#f-add', root).addEventListener('click', () => Dialogs.txForm(null, { type: 'in', category: 'fatture', invoice: { bollo: true, rivalsa: false } }));
     $('#f-add-scad', root).addEventListener('click', () => Dialogs.txForm(null, {
-      type: 'out', category: catTasse(), desc: 'F24', date: todayISO(),
+      type: 'out', category: catTasse(), account: contoTasse(), desc: 'F24', date: todayISO(),
     }));
     $('#f-fiscozen', root).addEventListener('click', () => Dialogs.fiscozen());
     $$('tbody tr[data-id]', root).forEach(r => r.addEventListener('click', () => Dialogs.txForm(DB.state.tx.find(t => t.id === r.dataset.id))));
@@ -810,6 +836,11 @@ const Views = {
         <h4>Fisco (forfettario)</h4>
         <div class="s-desc">Parametri per il calcolo delle fatture. Verificali col commercialista - l'INPS Gestione Separata 2026 per chi non ha altra cassa è circa 26,07%.</div>
         <form id="fisco-form">
+          <div class="field"><label for="fx-conto">Conto da cui paghi gli F24</label>
+            <select id="fx-conto">${DB.state.accounts.filter(a => !a.archived).map(a =>
+              `<option value="${a.id}" ${contoTasse() === a.id ? 'selected' : ''}>${esc(a.icon)} ${esc(a.name)}</option>`).join('')}</select>
+            <div class="hint">Le scadenze importate da Fiscozen finiscono qui, e la spunta "coperte" guarda solo questo saldo. Cambiandolo si spostano anche le scadenze future già inserite.</div>
+          </div>
           <div class="frow">
             <div class="field"><label for="fx-imposta">Imposta sostitutiva %</label><input id="fx-imposta" type="number" step="0.01" min="0" max="100" value="${(s.imposta * 100).toFixed(2).replace(/\.?0+$/, '')}"></div>
             <div class="field"><label for="fx-inps">INPS %</label><input id="fx-inps" type="number" step="0.01" min="0" max="100" value="${(s.inps * 100).toFixed(2).replace(/\.?0+$/, '')}"></div>
@@ -961,12 +992,21 @@ const Views = {
     $('#fisco-form', root).addEventListener('submit', async e => {
       e.preventDefault();
       const s = DB.state.settings;
+      s.contoTasse = $('#fx-conto').value || null;
       s.imposta = (+$('#fx-imposta').value || 0) / 100;
       s.inps = (+$('#fx-inps').value || 0) / 100;
       s.coeff = (+$('#fx-coeff').value || 0) / 100;
       s.bollo = Math.round((+$('#fx-bollo').value || 0) * 100);
       await DB.saveSettings();
-      toast('Parametri fiscali salvati ✓');
+
+      // le scadenze future si allineano sempre al conto scelto, anche quelle gia'
+      // inserite prima: se no restano su un conto da cui non paghi davvero
+      const meta = contoTasse();
+      const da = scadenzeFiscali().filter(t => t.account !== meta)
+        .map(t => ({ ...t, account: meta, updatedAt: Date.now() }));
+      if (da.length) await DB.putTxBulk(da);
+      const spostate = da.length;
+      toast(`Parametri fiscali salvati ✓${spostate ? ` · ${spostate} scadenz${spostate === 1 ? 'a spostata' : 'e spostate'}` : ''}`);
       render();
     });
 
@@ -1170,6 +1210,13 @@ function catTasse() {
   const c = DB.state.categories.find(x => /tass|contribut/i.test(x.name) && !x.archived);
   return c ? c.id : null;
 }
+/* Il conto da cui paghi gli F24. Serve a due cose: metterlo sulle scadenze importate
+   e sapere su quale saldo controllare se sono coperte (i contanti non c'entrano). */
+function contoTasse() {
+  const vivi = DB.state.accounts.filter(a => !a.archived);
+  const scelto = vivi.find(a => a.id === DB.state.settings.contoTasse);
+  return (scelto || vivi.find(a => a.kind === 'bank') || vivi[0] || null)?.id || null;
+}
 function scadenzeFiscali() {
   const oggi = todayISO();
   const tid = catTasse();
@@ -1193,7 +1240,7 @@ function idFisco(v, usati) {
 function pianoFiscozen(voci) {
   const oggi = todayISO();
   const tid = catTasse();
-  const contoDefault = DB.state.accounts.find(a => !a.archived)?.id || null;
+  const conto = contoTasse();
   const usati = new Set();
   const assorbite = new Set();
   // le passate non entrano: diventerebbero uscite gia' avvenute e falserebbero il saldo
@@ -1213,7 +1260,7 @@ function pianoFiscozen(voci) {
       ...(vecchio || {}),
       id, type: 'out', amount: v.amount, date: v.date, desc: v.desc,
       category: tid, toAccount: null, invoice: null,
-      account: vecchio ? vecchio.account : contoDefault,
+      account: conto, // sempre il conto delle tasse, anche se la riga esisteva gia'
       fisco: { src: 'fiscozen', prevista: v.prevista },
       createdAt: vecchio?.createdAt || Date.now(),
       updatedAt: Date.now(),
