@@ -173,7 +173,7 @@ h2.viewtitle {
 .viewtitle + .subtitle { color: var(--ink-3); font-size: .92rem; margin-bottom: 14px; }
 /* i totali stanno sulla riga sotto, e su una riga sola: se non ci stanno rimpiccioliscono
    invece di andare a capo spezzando un importo a meta' */
-.sub-tot { display: block; white-space: nowrap; }
+.sub-tot { display: flex; gap: .7em; white-space: nowrap; }
 @media (max-width: 520px) { .sub-tot { font-size: .82rem; } }
 @media (max-width: 360px) { .sub-tot { font-size: .74rem; } }
 h3.rule {
