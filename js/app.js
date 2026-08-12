@@ -1,7 +1,7 @@
 /* app.js - Soldi. Router, viste, dialog. */
 'use strict';
 
-const APP_VERSION = 'v48';
+const APP_VERSION = 'v49';
 
 /* ---------- helpers ---------- */
 const EUR = new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' });
@@ -1942,7 +1942,11 @@ const Dialogs = {
   });
   navigate();
   Sync.boot();
-  Sync.onChange(() => { if (UI.route === 'impostazioni') render(); });
+  Sync.onChange(() => {
+    const sp = $('#sync-spin');
+    if (sp) sp.hidden = Sync.state.status !== 'sync';
+    if (UI.route === 'impostazioni') render();
+  });
   Batti.boot();
   checkPromemoria();
   checkFiscozen();

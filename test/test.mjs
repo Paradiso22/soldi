@@ -185,6 +185,57 @@ assert.equal(m.metaRev.settings, 200);
   assert.equal(Sync.merge(conTx, locale).tx.length, 0);
 }
 
+// --- sync: il permesso di Google deve sopravvivere alla ricarica ---
+// Google, per dare il permesso, apre una sua finestra. Se il permesso vive solo in
+// memoria la finestra si riapre a ogni apertura dell'app: qui si conta che non succeda.
+{
+  const src = load('js/sync.js');
+  const store = new Map();
+  let aperture = 0; // quante volte Google aprirebbe la finestra
+
+  globalThis.localStorage = {
+    getItem: k => (store.has(k) ? store.get(k) : null),
+    setItem: (k, v) => store.set(k, String(v)),
+    removeItem: k => store.delete(k),
+  };
+  const oauth2 = {
+    initTokenClient: () => ({
+      requestAccessToken() { aperture++; this.callback({ access_token: 'tok', expires_in: 3600 }); },
+    }),
+  };
+  globalThis.window = { google: { accounts: { oauth2 } } };
+  globalThis.google = globalThis.window.google;
+  const DBvero = globalThis.DB; // i test dopo lo usano: va rimesso a posto
+  globalThis.DB = {
+    state: { settings: { sync: { on: true, clientId: 'cid', hint: 'gio@example.com', lastSync: 0 } } },
+    getSyncKey: async () => null, getSyncSalt: async () => null, saveSettings: async () => {},
+  };
+  globalThis.fetch = async () => ({ ok: true, status: 200, json: async () => ({ files: [] }) });
+
+  // ogni istanza e' come una nuova apertura dell'app: memoria pulita, stesso localStorage
+  const apriApp = () => (0, eval)('(function(){' + src + '\n; return Sync; })()');
+
+  await apriApp().syncNow().catch(() => {}); // si ferma su NEED_PASSWORD, ma il token l'ha chiesto
+  assert.equal(aperture, 1);
+
+  await apriApp().syncNow().catch(() => {});
+  assert.equal(aperture, 1, 'alla riapertura non deve richiedere il permesso a Google');
+
+  // permesso scaduto: allora si', la finestra ci vuole
+  store.set('soldi-gtoken', JSON.stringify({ t: 'tok', exp: Date.now() - 1000 }));
+  await apriApp().syncNow().catch(() => {});
+  assert.equal(aperture, 2, 'scaduto il permesso lo deve richiedere');
+
+  // scollegando, il permesso non deve restare in giro nemmeno se il resto fallisce
+  const rotto = apriApp();
+  DB.setSyncKey = async () => { throw new Error('disco pieno'); };
+  await rotto.disconnect().catch(() => {});
+  assert.equal(store.get('soldi-gtoken'), undefined);
+
+  for (const k of ['localStorage', 'window', 'google', 'fetch']) delete globalThis[k];
+  globalThis.DB = DBvero;
+}
+
 // --- ricorrenze: matematica delle date ---
 assert.equal(DB.nextRecurDate('2026-08-16', 'monthly'), '2026-09-16');
 assert.equal(DB.nextRecurDate('2026-01-31', 'monthly'), '2026-02-28'); // clampa a fine mese
@@ -224,4 +275,4 @@ assert.equal(Batti.mapCategory('Spesa'), 'spesa-casa');
 assert.equal(Batti.mapCategory('Fuori casa'), 'pasti');
 assert.equal(Batti.mapCategory('Bollette'), null); // nessun match: resta da assegnare
 
-console.log('OK - fisco, parser, merge di sync, ricorrenze, carta collegata e ponte Batti combaciano');
+console.log('OK - fisco, parser, sync (merge e permesso Google), ricorrenze, carta collegata e ponte Batti combaciano');

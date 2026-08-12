@@ -35,8 +35,34 @@ const Sync = (() => {
     });
   }
 
+  /* Il permesso di Google dura un'ora, ma stava solo in memoria: a ogni ricarica
+     ne serviva uno nuovo, e Google per darlo apre una sua finestra (non si puo'
+     nascondere, la apre il browser). Tenendolo da parte la finestra compare al
+     massimo una volta all'ora invece che a ogni apertura.
+     Vale la pena: il permesso e' limitato alla cartella privata di questa app su
+     Drive, dove c'e' solo il file cifrato - chi lo rubasse scaricherebbe roba che
+     non sa leggere, perche' la password di sync non e' salvata da nessuna parte. */
+  const TOK_KEY = 'soldi-gtoken';
+
+  function ricordaToken() {
+    try { localStorage.setItem(TOK_KEY, JSON.stringify({ t: token, exp: tokenExp })); } catch { /* spazio pieno: pazienza */ }
+  }
+  function scordaToken() {
+    token = null; tokenExp = 0;
+    try { localStorage.removeItem(TOK_KEY); } catch { /* niente da fare */ }
+  }
+  function riprendiToken() {
+    try {
+      const j = JSON.parse(localStorage.getItem(TOK_KEY) || 'null');
+      if (j?.t && j.exp > Date.now() + 60000) { token = j.t; tokenExp = j.exp; }
+    } catch { /* illeggibile: se ne chiede uno nuovo */ }
+  }
+
+  const tokenBuono = () => token && Date.now() < tokenExp - 60000;
+
   async function getToken(interactive) {
-    if (token && Date.now() < tokenExp - 60000) return token;
+    if (!tokenBuono()) riprendiToken(); // magari e' avanzato dall'apertura precedente
+    if (tokenBuono()) return token;
     if (tokenPromise) return tokenPromise; // non sovrapporre due richieste (ruberebbero il callback)
     await loadGis();
     const clientId = cfg()?.clientId;
@@ -61,6 +87,7 @@ const Sync = (() => {
           : 'SILENT_FAIL'));
         token = r.access_token;
         tokenExp = Date.now() + (r.expires_in || 3600) * 1000;
+        ricordaToken();
         res(token);
       };
       try {
@@ -81,7 +108,7 @@ const Sync = (() => {
       ...opts,
       headers: { Authorization: 'Bearer ' + t, ...(opts.headers || {}) },
     });
-    if (res.status === 401) { token = null; throw new Error('AUTH_EXPIRED'); }
+    if (res.status === 401) { scordaToken(); throw new Error('AUTH_EXPIRED'); }
     if (!res.ok) throw new Error('Errore Drive (' + res.status + ').');
     return res;
   }
@@ -302,10 +329,10 @@ const Sync = (() => {
   }
 
   async function disconnect() {
+    scordaToken(); // prima di tutto: se qualcosa sotto fallisce, il permesso e' comunque via
     if (cfg()) { DB.state.settings.sync = { ...cfg(), on: false }; }
     await DB.saveSettings();
     await DB.setSyncKey(null, null);
-    token = null;
     state.status = 'off'; notify();
   }
 
