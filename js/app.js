@@ -1,7 +1,7 @@
 /* app.js - Soldi. Router, viste, dialog. */
 'use strict';
 
-const APP_VERSION = 'v38';
+const APP_VERSION = '39';
 
 /* ---------- helpers ---------- */
 const EUR = new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' });
@@ -277,10 +277,14 @@ const Views = {
     const ym = todayISO().slice(0, 7);
     const m = DB.sums({ ym });
     const y = new Date().getFullYear();
-    // scadenze fiscali vere (quelle che ti dice il commercialista), non piu' una stima
+    // scadenze fiscali vere (quelle che ti dice il commercialista), non piu' una stima.
+    // Le "previste" restano fuori dal numero grande: sono stime che cambiano a ogni fattura.
     const scad = scadenzeFiscali();
-    const daPagare = scad.reduce((s, t) => s + t.amount, 0);
-    const prossima = scad[0];
+    const dovute = scad.filter(t => !t.fisco?.prevista);
+    const previste = scad.filter(t => t.fisco?.prevista);
+    const daPagare = dovute.reduce((s, t) => s + t.amount, 0);
+    const stimate = previste.reduce((s, t) => s + t.amount, 0);
+    const prossima = dovute[0];
     const today = todayISO();
     const recent = DB.state.tx.filter(t => t.date <= today).slice(0, matchMedia('(min-width: 920px)').matches ? 11 : 6);
     const upcoming = DB.state.tx.filter(t => t.date > today).sort((a, b) => a.date.localeCompare(b.date)).slice(0, 5);
@@ -317,6 +321,7 @@ const Views = {
             : 'Nessuna scadenza fiscale inserita'}</span><br>
           <span class="s-val money">${fmt(daPagare)}</span>
           ${daPagare > total ? `<br><span class="s-label" style="color:var(--neg)">Ti mancano ${fmt(daPagare - total)} rispetto a quello che hai in cassa</span>` : ''}
+          ${stimate ? `<br><span class="s-label">+ ${fmt(stimate)} previsti più avanti (stima Fiscozen)</span>` : ''}
         </span>
         <svg class="ic" style="width:18px;color:var(--chalk-3)"><use href="#i-right"/></svg>
       </button>
@@ -559,8 +564,19 @@ const Views = {
     }).filter(r => r.n > 0);
 
     const scad = scadenzeFiscali();
-    const daPagare = scad.reduce((a, t) => a + t.amount, 0);
+    const dovute = scad.filter(t => !t.fisco?.prevista);
+    const previste = scad.filter(t => t.fisco?.prevista);
+    const daPagare = dovute.reduce((a, t) => a + t.amount, 0);
+    const stimate = previste.reduce((a, t) => a + t.amount, 0);
     const inCassa = [...DB.balances().values()].reduce((a, b) => a + b, 0);
+    const rigaScad = t => `<li><button class="txrow" data-id="${t.id}">
+        <span class="t-emoji" aria-hidden="true">${t.fisco?.prevista ? '🔮' : '📅'}</span>
+        <span class="t-main">
+          <span class="t-desc">${esc(t.desc)}</span>
+          <span class="t-sub">${fmtShort(t.date)} · ${fraQuanto(t.date)}${t.fisco?.prevista ? ' · stima' : ''}${DB.acc(t.account) ? ' · ' + esc(DB.acc(t.account).name) : ''}</span>
+        </span>
+        <span class="t-amt money neg">- ${fmt(t.amount)}</span>
+      </button></li>`;
 
     return `
       <h2 class="viewtitle">Fatture e tasse</h2>
@@ -571,24 +587,25 @@ const Views = {
       <div class="setaside ${daPagare > inCassa ? 'allarme' : ''}" style="cursor:default;margin-bottom:12px">
         <svg class="ic"><use href="#i-invoice"/></svg>
         <span style="flex:1">
-          <span class="s-label">Totale da pagare · ${scad.length} scadenz${scad.length === 1 ? 'a' : 'e'}</span><br>
+          <span class="s-label">Totale da pagare · ${dovute.length} scadenz${dovute.length === 1 ? 'a' : 'e'}</span><br>
           <span class="s-val money">${fmt(daPagare)}</span><br>
           <span class="s-label">${daPagare > inCassa
             ? 'In cassa hai ' + fmt(inCassa) + ': ti mancano ' + fmt(daPagare - inCassa)
             : 'In cassa hai ' + fmt(inCassa) + ': coperte ✓'}</span>
         </span>
       </div>
-      <ul class="txlist">${scad.map(t => `<li><button class="txrow" data-id="${t.id}">
-        <span class="t-emoji" aria-hidden="true">📅</span>
-        <span class="t-main">
-          <span class="t-desc">${esc(t.desc)}</span>
-          <span class="t-sub">${fmtShort(t.date)} · ${fraQuanto(t.date)}${DB.acc(t.account) ? ' · ' + esc(DB.acc(t.account).name) : ''}</span>
-        </span>
-        <span class="t-amt money neg">- ${fmt(t.amount)}</span>
-      </button></li>`).join('')}</ul>`
+      <ul class="txlist">${dovute.map(rigaScad).join('')}</ul>`
       : `<div class="empty" style="padding:22px"><svg class="ic"><use href="#i-invoice"/></svg>
         <div class="e-marker">Nessuna scadenza inserita</div>Copia qui gli F24 che ti indica Fiscozen: importo e data di scadenza.</div>`}
-      <button class="btn ${scad.length ? '' : 'primary'}" id="f-add-scad" style="margin:10px 0 4px"><svg class="ic"><use href="#i-plus"/></svg> Aggiungi scadenza fiscale</button>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin:10px 0 4px">
+        <button class="btn primary" id="f-fiscozen"><svg class="ic"><use href="#i-spark"/></svg> Incolla da Fiscozen</button>
+        <button class="btn" id="f-add-scad"><svg class="ic"><use href="#i-plus"/></svg> Aggiungi a mano</button>
+      </div>
+
+      ${previste.length ? `
+      <h3 class="rule">Tasse previste</h3>
+      <p class="mut" style="font-size:.8rem;margin:-4px 0 10px">Stime di Fiscozen, non ancora dovute: ${fmt(stimate)} in tutto. Cambiano man mano che emetti fatture, quindi si riscrivono a ogni "Incolla da Fiscozen". Sulle previste Fiscozen mostra un intervallo: qui trovi il valore più alto.</p>
+      <ul class="txlist">${previste.map(rigaScad).join('')}</ul>` : ''}
 
       <h3 class="rule">Fatture emesse</h3>
       <div class="periodnav">
@@ -632,7 +649,7 @@ const Views = {
         </tr>`).join('')}</tbody>
       </table></div>`}
 
-      <p class="mut" style="font-size:.78rem;margin-top:14px">Le tasse non sono più stimate dall'app: quanto e quando pagare lo dice il tuo commercialista, e lo copi nelle scadenze qui sopra. Il motivo è che l'imposta reale dipende da acconti, saldo e contributi dedotti, che una stima per fattura non può conoscere.</p>`;
+      <p class="mut" style="font-size:.78rem;margin-top:14px">Le tasse non sono stimate dall'app: quanto e quando pagare lo dice Fiscozen, e con "Incolla da Fiscozen" finisce qui dentro. Il motivo è che l'imposta reale dipende da acconti, saldo, contributi dedotti e rateizzazione, che un calcolo per singola fattura non può conoscere. Dal 20 di ogni mese l'app ti ricorda di ricontrollare.</p>`;
   },
   bindFatture(root) {
     $('#f-prev', root).addEventListener('click', () => { UI.fatYear--; render(); });
@@ -641,6 +658,7 @@ const Views = {
     $('#f-add-scad', root).addEventListener('click', () => Dialogs.txForm(null, {
       type: 'out', category: catTasse(), desc: 'F24', date: todayISO(),
     }));
+    $('#f-fiscozen', root).addEventListener('click', () => Dialogs.fiscozen());
     $$('tbody tr[data-id]', root).forEach(r => r.addEventListener('click', () => Dialogs.txForm(DB.state.tx.find(t => t.id === r.dataset.id))));
   },
 
@@ -1128,6 +1146,23 @@ function checkPromemoria() {
   }
 }
 
+/* Dal 20 di ogni mese: ricontrolla Fiscozen. Le tasse previste cambiano ogni volta
+   che emetti una fattura, quindi vanno rilette, non calcolate. Se il 20 non apri
+   l'app, scatta il primo giorno che la apri. */
+function checkFiscozen() {
+  if (DB.state.settings.remind === false) return;
+  const oggi = todayISO();
+  if (+oggi.slice(8) < 20) return;
+  if (localStorage.getItem('soldi-fisco-mese') === oggi.slice(0, 7)) return;
+  localStorage.setItem('soldi-fisco-mese', oggi.slice(0, 7));
+
+  const testo = 'Controllo del mese: apri Fiscozen → Tasse, copia la pagina e incollala in Fatture e tasse.';
+  setTimeout(() => toast(testo), 4000); // dopo l'eventuale promemoria, che dura 2,6s
+  if (notifOn()) {
+    try { new Notification('Soldi', { body: testo, icon: 'icons/icon-192.png', tag: 'soldi-fiscozen' }); } catch { /* alcuni browser la vogliono dal service worker */ }
+  }
+}
+
 /* Scadenze fiscali: sono normali movimenti futuri in "Tasse e Contributi".
    Cosi' non tolgono soldi finche' non arriva la data, compaiono in "In arrivo"
    e viaggiano nella sync senza codice nuovo. */
@@ -1142,6 +1177,61 @@ function scadenzeFiscali() {
     .filter(t => t.type === 'out' && t.date > oggi && t.category && t.category === tid)
     .sort((a, b) => a.date.localeCompare(b.date));
 }
+/* Import da Fiscozen. L'id e' calcolato da data + descrizione: reincollare la pagina
+   aggiorna le righe invece di duplicarle, e quelle che Fiscozen non elenca piu'
+   spariscono da sole (le previste cambiano ogni volta che emetti una fattura).
+   Quello che scrivi a mano non ha "fisco.src" e non viene mai toccato. */
+function idFisco(v, usati) {
+  const base = 'fz-' + v.date + '-' + (v.key || v.desc).toLowerCase().normalize('NFD')
+    .replace(/[^a-z0-9]+/g, '').slice(0, 24);
+  let id = base;
+  for (let n = 2; usati.has(id); n++) id = base + '-' + n;
+  usati.add(id);
+  return id;
+}
+
+function pianoFiscozen(voci) {
+  const oggi = todayISO();
+  const tid = catTasse();
+  const contoDefault = DB.state.accounts.find(a => !a.archived)?.id || null;
+  const usati = new Set();
+  const assorbite = new Set();
+  // le passate non entrano: diventerebbero uscite gia' avvenute e falserebbero il saldo
+  const buone = voci.filter(v => v.date > oggi && v.amount > 0);
+
+  const nuovi = buone.map(v => {
+    const id = idFisco(v, usati);
+    let vecchio = DB.state.tx.find(t => t.id === id);
+    // se la stessa scadenza l'avevi gia' scritta a mano (stessa data e stesso importo)
+    // la adotto invece di affiancarla, se no ti ritrovi tutto in doppio
+    if (!vecchio) {
+      vecchio = DB.state.tx.find(t => !t.fisco && !assorbite.has(t.id) && t.type === 'out'
+        && t.category === tid && t.date === v.date && t.amount === v.amount && t.date > oggi);
+      if (vecchio) assorbite.add(vecchio.id);
+    }
+    return {
+      ...(vecchio || {}),
+      id, type: 'out', amount: v.amount, date: v.date, desc: v.desc,
+      category: tid, toAccount: null, invoice: null,
+      account: vecchio ? vecchio.account : contoDefault,
+      fisco: { src: 'fiscozen', prevista: v.prevista },
+      createdAt: vecchio?.createdAt || Date.now(),
+      updatedAt: Date.now(),
+    };
+  });
+
+  const tieni = new Set(nuovi.map(t => t.id));
+  const sparite = DB.state.tx.filter(t => t.fisco?.src === 'fiscozen' && t.date > oggi && !tieni.has(t.id));
+  return { nuovi, sparite, assorbite: [...assorbite], scartate: voci.length - buone.length };
+}
+
+async function importaFiscozen(voci) {
+  const p = pianoFiscozen(voci);
+  for (const id of [...p.assorbite, ...p.sparite.map(t => t.id)]) await DB.deleteTx(id);
+  if (p.nuovi.length) await DB.putTxBulk(p.nuovi);
+  return { messe: p.nuovi.length, tolte: p.sparite.length, adottate: p.assorbite.length };
+}
+
 function fraQuanto(iso) {
   const g = Math.ceil((new Date(iso) - new Date(todayISO())) / 864e5);
   if (g <= 0) return 'oggi';
@@ -1229,6 +1319,57 @@ const Dialogs = {
       <div class="dlg-body"><p style="color:var(--chalk-2)">${esc(body)}</p></div>
       <div class="dlg-foot"><button class="btn dlg-close">Annulla</button><button class="btn danger" id="c-ok">${esc(okLabel)}</button></div>`);
     $('#c-ok', dlg).addEventListener('click', async () => { dlg.close(); await onOk(); });
+  },
+
+  /* --- incolla la pagina "Tasse" di Fiscozen --- */
+  fiscozen() {
+    const dlg = Dialogs.open(`
+      <div class="dlg-head"><h2>Incolla da Fiscozen</h2>
+        <button class="iconbtn dlg-close" aria-label="Chiudi"><svg class="ic"><use href="#i-x"/></svg></button></div>
+      <div class="dlg-body">
+        <p class="mut" style="font-size:.84rem;margin:0 0 12px;line-height:1.5">
+          Su Fiscozen apri <strong>Adempimenti → Tasse</strong>, seleziona tutta la pagina e copiala.
+          Incollala qui: una volta con il filtro <em>Tasse da pagare</em> e una con <em>Tasse future</em>
+          (o incolla le due insieme).</p>
+        <div class="field"><label for="fz-txt">Testo copiato</label>
+          <textarea id="fz-txt" rows="5" placeholder="Da pagare&#10;16 settembre 2026&#10;732,09 €&#10;Scarica e paga l'F24 relativo a:"></textarea></div>
+        <div id="fz-prev" class="mut" style="font-size:.84rem;line-height:1.6">Incolla il testo per vedere cosa succede.</div>
+      </div>
+      <div class="dlg-foot"><button class="btn dlg-close">Annulla</button>
+        <button class="btn primary" id="fz-ok" disabled>Importa</button></div>`);
+
+    const txt = $('#fz-txt', dlg);
+    const prev = $('#fz-prev', dlg);
+    const ok = $('#fz-ok', dlg);
+    let voci = [];
+
+    const aggiorna = () => {
+      voci = Parser.fiscozen(txt.value);
+      const p = pianoFiscozen(voci);
+      const dov = p.nuovi.filter(t => !t.fisco.prevista);
+      const pre = p.nuovi.filter(t => t.fisco.prevista);
+      ok.disabled = !p.nuovi.length;
+      if (!txt.value.trim()) { prev.textContent = 'Incolla il testo per vedere cosa succede.'; return; }
+      if (!voci.length) { prev.innerHTML = '<span style="color:var(--neg)">Non ho riconosciuto nessuna scadenza. Assicurati di aver copiato tutta la pagina, comprese le date.</span>'; return; }
+      const somma = l => fmt(l.reduce((a, t) => a + t.amount, 0));
+      prev.innerHTML = `
+        ${dov.length ? `<strong>${dov.length} da pagare</strong> · ${somma(dov)}<br>
+          ${dov.map(t => `${fmtShort(t.date)} · ${fmt(t.amount)}`).join('<br>')}<br>` : ''}
+        ${pre.length ? `<strong style="display:inline-block;margin-top:6px">${pre.length} previste</strong> · ${somma(pre)}<br>
+          ${pre.map(t => `${fmtShort(t.date)} · ${fmt(t.amount)} · ${esc(t.desc)}`).join('<br>')}<br>` : ''}
+        ${p.assorbite.length ? `<span style="display:inline-block;margin-top:6px">${p.assorbite.length} scadenz${p.assorbite.length === 1 ? 'a che avevi' : 'e che avevi'} già messo a mano (stessa data e stesso importo) ${p.assorbite.length === 1 ? 'viene sostituita' : 'vengono sostituite'}, così non resta in doppio.</span><br>` : ''}
+        ${p.sparite.length ? `<span style="color:var(--neg);display:inline-block;margin-top:6px">${p.sparite.length} scadenz${p.sparite.length === 1 ? 'a' : 'e'} importat${p.sparite.length === 1 ? 'a' : 'e'} prima e non più elencat${p.sparite.length === 1 ? 'a: verrà tolta' : 'e: verranno tolte'}.</span><br>` : ''}
+        <span style="display:inline-block;margin-top:6px">Il resto dei tuoi movimenti non viene toccato.</span>`;
+    };
+
+    txt.addEventListener('input', aggiorna);
+    ok.addEventListener('click', async () => {
+      const r = await importaFiscozen(voci);
+      dlg.close();
+      render();
+      toast(`${r.messe} scadenz${r.messe === 1 ? 'a aggiornata' : 'e aggiornate'}${r.tolte ? ', ' + r.tolte + ' tolte' : ''}`);
+    });
+    setTimeout(() => txt.focus(), 60);
   },
 
   /* --- form movimento (crea/modifica) --- */
@@ -1720,6 +1861,7 @@ const Dialogs = {
   Sync.onChange(() => { if (UI.route === 'impostazioni') render(); });
   Batti.boot();
   checkPromemoria();
+  checkFiscozen();
 
   // anti-cache: se online esiste una versione piu' nuova, ripulisci e ricarica da solo.
   // La query unica e' essenziale: la CDN di GitHub Pages tiene i file fino a ~10 minuti

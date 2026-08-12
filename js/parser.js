@@ -131,6 +131,74 @@ const Parser = (() => {
     return { amount, type, account, category, desc, date: dm.date, invoice };
   }
 
+  /* ---------- Fiscozen: incolli la pagina "Tasse" e ne escono le scadenze ----------
+     Il testo copiato e' regolare, quattro righe per voce:
+       Da pagare / 16 settembre 2026 / 732,09 €  / Scarica e paga l'F24 relativo a:
+       Prevista  / 30 giugno 2027    / 260-280 € / Primo acconto imposta sostitutiva...
+     Sulle previste Fiscozen mostra solo un intervallo (il valore esatto ce l'ha, ma
+     non lo scrive): si prende il massimo, che per accantonare e' la scelta prudente. */
+  const MESI_IT = ['gennaio', 'febbraio', 'marzo', 'aprile', 'maggio', 'giugno', 'luglio', 'agosto', 'settembre', 'ottobre', 'novembre', 'dicembre'];
+  const STATI = /^(da pagare|prevista|previste|pagata|pagate|scaduta|in scadenza)$/i;
+
+  // formato italiano: il punto separa le migliaia, la virgola i decimali
+  function euroCents(s) {
+    return Math.round(parseFloat(String(s).replace(/\./g, '').replace(',', '.')) * 100);
+  }
+
+  // sotto "Scarica e paga l'F24 relativo a:" c'e' il dettaglio: lo riassumo, se no
+  // quattro scadenze si chiamerebbero tutte e quattro "F24"
+  const VOCI_F24 = [ // ordine fisso: due F24 con le stesse voci si devono leggere uguali
+    [/imposta sostitutiva/i, 'imposta sostitutiva'],
+    [/\bINPS\b|contributi/i, 'INPS'],
+    [/interess/i, 'interessi'],
+    [/bollo/i, 'bollo'],
+  ];
+
+  function descF24(righe, da) {
+    const blocco = [];
+    for (let k = da; k < righe.length && k < da + 14; k++) {
+      if (STATI.test(righe[k]) || /^\d{1,2}\s+[a-zà]+\s+\d{4}$/i.test(righe[k])) break;
+      blocco.push(righe[k]);
+    }
+    const testo = blocco.join('\n');
+    const parti = VOCI_F24.filter(([re]) => re.test(testo)).map(([, nome]) => nome);
+    return parti.length ? 'F24 · ' + parti.join(' + ') : 'F24';
+  }
+
+  function fiscozen(testo) {
+    const righe = String(testo || '').split('\n').map(r => r.trim()).filter(Boolean);
+    const voci = [];
+    for (let i = 0; i < righe.length; i++) {
+      const d = righe[i].match(/^(\d{1,2})\s+([a-zà]+)\s+(\d{4})$/i);
+      if (!d) continue;
+      const mese = MESI_IT.indexOf(d[2].toLowerCase());
+      if (mese < 0) continue;
+
+      const stato = (righe[i - 1] || '').toLowerCase();
+      if (/^pagat/.test(stato)) continue; // gia' pagate: non sono soldi che devono uscire
+      const prevista = /^previst/.test(stato);
+
+      // l'importo e' la riga dopo la data (una di scarto per sicurezza)
+      let j = i + 1;
+      while (j <= i + 2 && righe[j] && !righe[j].includes('€')) j++;
+      const eur = (righe[j] || '').match(/([\d.]+(?:,\d{1,2})?)(?:\s*-\s*([\d.]+(?:,\d{1,2})?))?\s*€/);
+      if (!eur) continue;
+
+      const dopo = righe[j + 1] || '';
+      const titolo = prevista ? (STATI.test(dopo) || !dopo ? 'Tasse previste' : dopo) : descF24(righe, j + 1);
+      voci.push({
+        date: `${d[3]}-${String(mese + 1).padStart(2, '0')}-${d[1].padStart(2, '0')}`,
+        amount: euroCents(eur[2] || eur[1]), // sui range il massimo
+        desc: titolo,
+        // la chiave regge l'id del movimento: sulle F24 e' fissa, cosi' se Fiscozen
+        // cambia una riga di dettaglio la scadenza si aggiorna invece di sdoppiarsi
+        key: prevista ? titolo : 'f24',
+        prevista,
+      });
+    }
+    return voci;
+  }
+
   /* ---------- Gemini (opzionale, foto scontrino / testo complesso) ---------- */
   // Il modello non e' fisso: Google li rinomina/pensiona. Si chiede alla API
   // quali modelli vede la chiave e si sceglie il flash piu' recente.
@@ -201,5 +269,5 @@ Conti: ${accList}. Categorie: ${catList}. Oggi è ${today}. Se è uno scontrino 
     };
   }
 
-  return { parse, geminiParse };
+  return { parse, geminiParse, fiscozen };
 })();

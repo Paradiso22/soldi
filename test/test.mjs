@@ -62,6 +62,85 @@ assert.equal(p.date.slice(5), '08-05'); // giorno giusto, niente slittamenti UTC
 p = Parser.parse('senza importo qui', env);
 assert.ok(p.error);
 
+// --- Fiscozen: la pagina "Tasse" copiata cosi' com'e' ---
+{
+  const pagina = `Mostra
+Tasse da pagare
+Tasse da pagare
+€ 4.099,59
+
+Da pagare
+
+16 settembre 2026
+
+732,09 €
+
+Scarica e paga l'F24 relativo a:
+Imposta sostitutiva sul regime forfetario - Acconto - I Rata
+
+Da pagare
+
+30 novembre 2026
+
+1.892,50 €
+
+Scarica e paga l'F24 relativo a:
+
+Pagata
+
+16 maggio 2026
+
+300,00 €
+
+Scarica e paga l'F24 relativo a:
+
+Tasse future
+1.320-1.460 €
+
+Prevista
+
+30 novembre 2026
+
+10-20 €
+
+Imposta di bollo sulle fatture elettroniche - I/II/III trimestre
+
+Prevista
+
+30 giugno 2027
+
+0 €
+
+Saldo imposta sostitutiva (rif. 2026) - GS INPS
+
+Prevista
+
+30 giugno 2027
+
+260-280 €
+
+Primo acconto imposta sostitutiva (rif. 2027) - GS INPS`;
+
+  const v = Parser.fiscozen(pagina);
+  assert.equal(v.length, 5);                       // la "Pagata" resta fuori
+  assert.deepEqual(v[0], {
+    date: '2026-09-16', amount: 73209, prevista: false,
+    desc: 'F24 · imposta sostitutiva', key: 'f24', // il dettaglio finisce nel nome
+  });
+  assert.equal(v[1].desc, 'F24');                  // senza dettaglio resta il nome nudo
+  assert.equal(v[1].key, 'f24');                   // ma la chiave e' sempre la stessa
+  assert.equal(v[1].amount, 189250);               // il punto separa le migliaia
+  assert.equal(v[2].amount, 2000);                 // "10-20 €" -> il massimo, per prudenza
+  assert.equal(v[2].desc, 'Imposta di bollo sulle fatture elettroniche - I/II/III trimestre');
+  assert.equal(v[2].prevista, true);
+  assert.equal(v[3].amount, 0);                    // "0 €" letto, poi scartato dall'import
+  assert.equal(v[4].amount, 28000);
+  // i totali di testata non hanno una data davanti e non devono entrare
+  assert.ok(!v.some(x => x.amount === 409959 || x.amount === 146000));
+  assert.deepEqual(Parser.fiscozen(''), []);
+  assert.deepEqual(Parser.fiscozen('roba a caso senza date'), []);
+}
+
 // --- sync: merge tra dispositivi ---
 (0, eval)(load('js/sync.js') + '\n;globalThis.Sync = Sync;');
 const { Sync } = globalThis;
