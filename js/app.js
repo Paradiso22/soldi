@@ -1,7 +1,7 @@
 /* app.js - Soldi. Router, viste, dialog. */
 'use strict';
 
-const APP_VERSION = 'v40';
+const APP_VERSION = 'v41';
 
 /* ---------- helpers ---------- */
 const EUR = new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' });
@@ -686,6 +686,7 @@ const Views = {
     }));
     $('#f-fiscozen', root).addEventListener('click', () => Dialogs.fiscozen());
     $$('tbody tr[data-id]', root).forEach(r => r.addEventListener('click', () => Dialogs.txForm(DB.state.tx.find(t => t.id === r.dataset.id))));
+    $$('.txrow', root).forEach(r => r.addEventListener('click', () => Dialogs.txForm(DB.state.tx.find(t => t.id === r.dataset.id))));
   },
 
   /* ===== statistiche ===== */
@@ -1270,6 +1271,23 @@ function pianoFiscozen(voci) {
   const tieni = new Set(nuovi.map(t => t.id));
   const sparite = DB.state.tx.filter(t => t.fisco?.src === 'fiscozen' && t.date > oggi && !tieni.has(t.id));
   return { nuovi, sparite, assorbite: [...assorbite], scartate: voci.length - buone.length };
+}
+
+/* Le scadenze di Fiscozen stanno sul conto delle tasse: l'import ce le mette, ma
+   quelle importate prima che il conto fosse scegliibile erano finite sul primo conto
+   in elenco (i contanti). Si riallineano da sole, ma una volta sola: dopo, se sposti
+   a mano una scadenza su un altro conto, deve restarci. */
+async function allineaContoScadenze() {
+  if (localStorage.getItem('soldi-conto-scadenze') === 'fatto') return 0;
+  localStorage.setItem('soldi-conto-scadenze', 'fatto');
+  const conto = contoTasse();
+  if (!conto) return 0;
+  const oggi = todayISO();
+  const da = DB.state.tx
+    .filter(t => t.fisco?.src === 'fiscozen' && t.date > oggi && t.account !== conto)
+    .map(t => ({ ...t, account: conto, updatedAt: Date.now() }));
+  if (da.length) await DB.putTxBulk(da);
+  return da.length;
 }
 
 async function importaFiscozen(voci) {
@@ -1893,6 +1911,8 @@ const Dialogs = {
     await DB.migrateRecurringNotes();
     const created = await DB.materializeRecurring();
     if (created > 0) setTimeout(() => toast(created + (created === 1 ? ' movimento ricorrente creato' : ' movimenti ricorrenti creati')), 600);
+    const mosse = await allineaContoScadenze();
+    if (mosse > 0) setTimeout(() => toast(`${mosse} scadenz${mosse === 1 ? 'a spostata' : 'e spostate'} su ${DB.acc(contoTasse())?.name || 'il conto delle tasse'}`), 1200);
   } catch { /* non bloccare l'avvio */ }
 
   $('#app').hidden = false;
