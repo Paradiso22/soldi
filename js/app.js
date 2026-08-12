@@ -1,7 +1,7 @@
 /* app.js - Soldi. Router, viste, dialog. */
 'use strict';
 
-const APP_VERSION = 'v49';
+const APP_VERSION = 'v50';
 
 /* ---------- helpers ---------- */
 const EUR = new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' });
@@ -1047,7 +1047,7 @@ const Views = {
     });
     const syNow = $('#sy-now', root);
     if (syNow) syNow.addEventListener('click', () => {
-      const run = pw => Sync.syncNow({ interactive: true, password: pw })
+      const run = pw => Sync.syncNow({ interactive: true, password: pw, manual: true })
         .then(() => { toast('Sincronizzato ✓'); render(); })
         .catch(e => {
           if (e.message === 'NEED_PASSWORD' || e.message === 'WRONG_KEY') Dialogs.syncPassword(run, e.message === 'WRONG_KEY');
@@ -1202,6 +1202,51 @@ function checkPromemoria() {
   if (notifOn()) {
     try { new Notification('Soldi', { body: testo, icon: 'icons/icon-192.png', tag: 'soldi-promemoria' }); } catch { /* alcuni browser la vogliono dal service worker */ }
   }
+}
+
+/* Tira giu' dall'alto per aggiornare, come nelle app di messaggi.
+   Il pull-to-refresh nativo di Chrome e' gia' spento (overscroll-behavior-y: none
+   nel css), quindi il gesto e' libero e non ricarica la pagina. */
+let tirando = false;
+function bindTiraPerAggiornare() {
+  const SOGLIA = 70; // px da tirare perche' parta
+  let y0 = null, dy = 0;
+  const spin = () => $('#sync-spin');
+
+  addEventListener('touchstart', e => {
+    y0 = (scrollY <= 0 && e.touches.length === 1 && Sync.enabled()) ? e.touches[0].clientY : null;
+    dy = 0;
+  }, { passive: true });
+
+  addEventListener('touchmove', e => {
+    if (y0 === null) return;
+    dy = e.touches[0].clientY - y0;
+    if (dy <= 0 || scrollY > 0) { annulla(); return; }
+    const sp = spin();
+    if (!sp) return;
+    tirando = true;
+    sp.hidden = false;
+    sp.style.opacity = Math.min(1, dy / SOGLIA);
+  }, { passive: true });
+
+  const annulla = () => {
+    y0 = null; dy = 0; tirando = false;
+    const sp = spin();
+    if (sp && !(Sync.state.status === 'sync' && Sync.state.manual)) { sp.hidden = true; sp.style.opacity = ''; }
+  };
+
+  addEventListener('touchend', () => {
+    if (y0 === null) return;
+    const parti = dy > SOGLIA;
+    annulla();
+    if (!parti) return;
+    Sync.syncNow({ manual: true })
+      .then(() => toast('Aggiornato ✓'))
+      .catch(e => toast(e.message === 'SILENT_FAIL' ? 'Serve ricollegare Google dalle impostazioni.' : e.message))
+      .finally(render);
+  }, { passive: true });
+
+  addEventListener('touchcancel', annulla, { passive: true });
 }
 
 /* Dal 20 di ogni mese: ricontrolla Fiscozen. Le tasse previste cambiano ogni volta
@@ -1944,9 +1989,11 @@ const Dialogs = {
   Sync.boot();
   Sync.onChange(() => {
     const sp = $('#sync-spin');
-    if (sp) sp.hidden = Sync.state.status !== 'sync';
+    // solo per le sincronizzazioni che chiedi tu: quelle automatiche restano zitte
+    if (sp && !tirando) { sp.hidden = !(Sync.state.status === 'sync' && Sync.state.manual); sp.style.opacity = ''; }
     if (UI.route === 'impostazioni') render();
   });
+  bindTiraPerAggiornare();
   Batti.boot();
   checkPromemoria();
   checkFiscozen();

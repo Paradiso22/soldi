@@ -231,7 +231,10 @@ const Sync = (() => {
   }
 
   /* ---------- sync ---------- */
-  const state = { status: enabled() ? 'idle' : 'off', lastError: null };
+  // manual = l'hai chiesto tu (tirando giu' o dal bottone): solo allora si mostra
+  // la rotella. Le sincronizzazioni automatiche restano invisibili, se no lampeggia
+  // ogni 15 secondi mentre giri per l'app.
+  const state = { status: enabled() ? 'idle' : 'off', lastError: null, manual: false };
 
   async function applyMerged(m) {
     applyingRemote = true;
@@ -248,9 +251,24 @@ const Sync = (() => {
     } finally { applyingRemote = false; }
   }
 
-  async function syncNow({ interactive = false, password = null } = {}) {
-    if (!enabled() || syncing) return;
+  /* Se tiri giu' mentre una sincronizzazione automatica e' gia' partita, non si fa
+     finta di niente: si mostra la rotella per quella e si aspetta che finisca, se no
+     il "Aggiornato" comparirebbe prima che sia successo qualcosa. */
+  let corrente = null;
+
+  async function syncNow(opts = {}) {
+    if (!enabled()) return;
+    if (syncing) {
+      if (opts.manual) { state.manual = true; notify(); }
+      return corrente;
+    }
+    corrente = eseguiSync(opts);
+    try { return await corrente; } finally { corrente = null; }
+  }
+
+  async function eseguiSync({ interactive = false, password = null, manual = false } = {}) {
     syncing = true;
+    state.manual = manual;
     state.status = 'sync'; state.lastError = null; notify();
     try {
       const remote = await driveFind(interactive);
@@ -299,7 +317,7 @@ const Sync = (() => {
       }
       throw e;
     } finally {
-      syncing = false; notify();
+      syncing = false; state.manual = false; notify();
     }
   }
 

@@ -205,11 +205,15 @@ assert.equal(m.metaRev.settings, 200);
   };
   globalThis.window = { google: { accounts: { oauth2 } } };
   globalThis.google = globalThis.window.google;
+  // attenzione: in cima al file c'e' `const { DB } = globalThis`, quindi il nome DB
+  // resta legato a quello vero. Il finto va chiamato per nome, se no si configura
+  // l'oggetto sbagliato e sync.js non vede niente.
   const DBvero = globalThis.DB; // i test dopo lo usano: va rimesso a posto
-  globalThis.DB = {
+  const DBfinto = {
     state: { settings: { sync: { on: true, clientId: 'cid', hint: 'gio@example.com', lastSync: 0 } } },
     getSyncKey: async () => null, getSyncSalt: async () => null, saveSettings: async () => {},
   };
+  globalThis.DB = DBfinto;
   globalThis.fetch = async () => ({ ok: true, status: 200, json: async () => ({ files: [] }) });
 
   // ogni istanza e' come una nuova apertura dell'app: memoria pulita, stesso localStorage
@@ -228,9 +232,33 @@ assert.equal(m.metaRev.settings, 200);
 
   // scollegando, il permesso non deve restare in giro nemmeno se il resto fallisce
   const rotto = apriApp();
-  DB.setSyncKey = async () => { throw new Error('disco pieno'); };
+  DBfinto.setSyncKey = async () => { throw new Error('disco pieno'); };
   await rotto.disconnect().catch(() => {});
   assert.equal(store.get('soldi-gtoken'), undefined);
+
+  /* Tirare giu' mentre una sincronizzazione automatica e' gia' in corso: non deve
+     uscire subito dicendo "fatto", deve accodarsi a quella e accendere la rotella. */
+  {
+    let sblocca;
+    const attesa = new Promise(r => { sblocca = r; });
+    // il disconnect di prima ha spento la sync: qui serve riattaccata
+    DBfinto.state.settings.sync = { on: true, clientId: 'cid', hint: 'gio@example.com', lastSync: 0 };
+    DBfinto.setSyncKey = async () => {};
+    globalThis.fetch = async () => { await attesa; return { ok: true, status: 200, json: async () => ({ files: [] }) }; };
+    const s = apriApp();
+    let finita = false;
+    const auto = s.syncNow().catch(() => {}).then(() => { finita = true; });
+    await null;
+    assert.equal(s.state.manual, false, 'la sincronizzazione automatica non accende la rotella');
+
+    const tirata = s.syncNow({ manual: true }).catch(() => {});
+    assert.equal(s.state.manual, true, 'tirando giu la rotella si accende anche su una sync gia in corso');
+    assert.equal(finita, false);
+    sblocca();
+    await tirata;
+    await auto;
+    assert.equal(finita, true, 'la tirata deve aspettare la sync in corso, non fingere di aver finito');
+  }
 
   for (const k of ['localStorage', 'window', 'google', 'fetch']) delete globalThis[k];
   globalThis.DB = DBvero;
