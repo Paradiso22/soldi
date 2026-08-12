@@ -1,20 +1,20 @@
 /* sw.js - offline first */
 'use strict';
 
-const VERSION = 'soldi-v46';
+const VERSION = 'soldi-v47';
 const ASSETS = [
   './',
   'index.html',
-  'css/app.css?v=46',
-  'js/db.js?v=46',
-  'js/parser.js?v=46',
-  'js/charts.js?v=46',
-  'js/backup.js?v=46',
-  'js/sync.js?v=46',
-  'js/batti.js?v=46',
-  'js/gate.js?v=46',
-  'js/lock.js?v=46',
-  'js/app.js?v=46',
+  'css/app.css?v=47',
+  'js/db.js?v=47',
+  'js/parser.js?v=47',
+  'js/charts.js?v=47',
+  'js/backup.js?v=47',
+  'js/sync.js?v=47',
+  'js/batti.js?v=47',
+  'js/gate.js?v=47',
+  'js/lock.js?v=47',
+  'js/app.js?v=47',
   'fonts/baloo2-latin.woff2',
   'fonts/nunito-latin.woff2',
   'manifest.webmanifest',
