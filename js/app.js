@@ -1,7 +1,7 @@
 /* app.js - Soldi. Router, viste, dialog. */
 'use strict';
 
-const APP_VERSION = 'v44';
+const APP_VERSION = 'v45';
 
 /* ---------- helpers ---------- */
 const EUR = new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' });
@@ -598,6 +598,17 @@ const Views = {
     // gli F24 escono da un conto solo: e' quel saldo che deve bastare, non il totale
     const contoF24 = DB.acc(contoTasse());
     const inCassa = DB.balances().get(contoTasse()) || 0;
+    /* Il confronto col saldo si fa su quello che scade adesso, non su quattro mesi di
+       F24 in blocco: le fatture che incassi a settembre pagano l'F24 di settembre.
+       Se questo mese non scade niente, si guarda alla prossima. Il resto resta scritto
+       sotto, cosi' un F24 grosso piu' avanti non arriva di sorpresa. */
+    const ymOggi = todayISO().slice(0, 7);
+    const meseNome = MESI[+ymOggi.slice(5) - 1].toLowerCase();
+    const delMese = dovute.filter(t => t.date.slice(0, 7) === ymOggi);
+    const prossima = dovute[0];
+    const adesso = delMese.length ? delMese.reduce((a, t) => a + t.amount, 0) : (prossima ? prossima.amount : 0);
+    const oltre = daPagare - adesso;
+    const ultima = dovute[dovute.length - 1];
     const rigaScad = t => `<li><button class="txrow" data-id="${t.id}">
         <span class="t-emoji" aria-hidden="true">${t.fisco?.prevista ? '🔮' : '📅'}</span>
         <span class="t-main">
@@ -613,14 +624,17 @@ const Views = {
 
       <h3 class="rule">Scadenze fiscali</h3>
       ${scad.length ? `
-      <div class="setaside ${daPagare > inCassa ? 'allarme' : ''}" style="cursor:default;margin-bottom:12px">
+      <div class="setaside ${adesso > inCassa ? 'allarme' : ''}" style="cursor:default;margin-bottom:12px">
         <svg class="ic"><use href="#i-invoice"/></svg>
         <span style="flex:1">
-          <span class="s-label">Totale da pagare · ${dovute.length} scadenz${dovute.length === 1 ? 'a' : 'e'}</span><br>
-          <span class="s-val money">${fmt(daPagare)}</span><br>
-          <span class="s-label">Su ${esc(contoF24 ? contoF24.name : 'nessun conto')} hai ${fmt(inCassa)}: ${daPagare > inCassa
-            ? 'ti mancano ' + fmt(daPagare - inCassa)
+          <span class="s-label">${delMese.length
+            ? 'Da pagare entro fine ' + meseNome + ' · ' + delMese.length + ' scadenz' + (delMese.length === 1 ? 'a' : 'e')
+            : 'Niente da pagare ' + (/^[aeiou]/.test(meseNome) ? 'ad ' : 'a ') + meseNome + ' · la prossima ' + fmtShort(prossima.date)}</span><br>
+          <span class="s-val money">${fmt(adesso)}</span><br>
+          <span class="s-label">Su ${esc(contoF24 ? contoF24.name : 'nessun conto')} hai ${fmt(inCassa)}: ${adesso > inCassa
+            ? 'ti mancano ' + fmt(adesso - inCassa)
             : 'coperte ✓'}</span>
+          ${oltre ? `<br><span class="s-label">Poi altri ${fmt(oltre)} entro il ${fmtShort(ultima.date)}</span>` : ''}
         </span>
       </div>
       <ul class="txlist">${dovute.map(rigaScad).join('')}</ul>`
