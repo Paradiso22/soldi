@@ -1,7 +1,7 @@
 /* app.js - Soldi. Router, viste, dialog. */
 'use strict';
 
-const APP_VERSION = 'v50';
+const APP_VERSION = 'v51';
 
 /* ---------- helpers ---------- */
 const EUR = new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' });
@@ -289,6 +289,14 @@ const Views = {
     const daPagare = dovute.reduce((s, t) => s + t.amount, 0);
     const stimate = previste.reduce((s, t) => s + t.amount, 0);
     const prossima = dovute[0];
+    /* La sincronizzazione puo' morire in silenzio: il permesso di Google dura un'ora e
+       il rinnovo automatico, senza un tocco tuo, il browser lo blocca come popup. Prima
+       lo stato "serve riconnettersi" si vedeva solo dentro Impostazioni, e si poteva
+       restare giorni senza backup senza saperlo. Qui si vede, e il tocco stesso e' il
+       gesto che serve a Google per riaprire il permesso. */
+    const sy = DB.state.settings.sync;
+    const giorniSync = sy?.on && sy.lastSync ? Math.floor((Date.now() - sy.lastSync) / 864e5) : null;
+    const syncFerma = !!sy?.on && (Sync.state.status === 'reconnect' || giorniSync >= 1);
     // gli F24 escono da un conto solo: e' quel saldo che deve bastare
     const saldoF24 = bal.get(contoTasse()) || 0;
     const today = todayISO();
@@ -345,6 +353,9 @@ const Views = {
       ${noCat ? `<button class="badge warn" id="fix-nocat" style="margin-top:12px;cursor:pointer;font-family:inherit">
         <svg class="ic" style="width:14px;height:14px"><use href="#i-alert"/></svg> ${noCat} movimenti senza categoria - sistemali</button>` : ''}
 
+      ${syncFerma ? `<button class="badge warn" id="fix-sync" style="margin-top:12px;cursor:pointer;font-family:inherit">
+        <svg class="ic" style="width:14px;height:14px"><use href="#i-alert"/></svg> Backup su Drive fermo ${giorniSync === null ? 'da un po\'' : 'da ' + giorniSync + (giorniSync === 1 ? ' giorno' : ' giorni')} - tocca per ricollegare</button>` : ''}
+
       ${(m.out > 0 || m.in > 0) ? (() => {
         const slices = donutSlices(filt, UI.homeFlow);
         return `<div class="chartcard" id="home-chart" style="margin-top:16px;cursor:pointer">
@@ -400,6 +411,19 @@ const Views = {
       location.hash = '#/movimenti';
     }));
     $('[data-goto="fatture"]', root).addEventListener('click', () => location.hash = '#/fatture');
+    const fsy = $('#fix-sync', root);
+    if (fsy) fsy.addEventListener('click', () => {
+      // interactive: true e' la differenza che conta - parte da un tocco vero, quindi
+      // Google puo' aprire la sua finestra invece di essere bloccato in silenzio
+      const run = pw => Sync.syncNow({ interactive: true, manual: true, password: pw })
+        .then(() => { toast('Backup aggiornato ✓'); render(); })
+        .catch(e => {
+          if (e.message === 'NEED_PASSWORD' || e.message === 'WRONG_KEY') Dialogs.syncPassword(run, e.message === 'WRONG_KEY');
+          else toast(e.message);
+          render();
+        });
+      run(null);
+    });
     const fx = $('#fix-nocat', root);
     if (fx) fx.addEventListener('click', () => { UI.mov = { scope: 'all', anchor: todayISO(), custom: null, account: null, category: '__none__', search: '', type: null }; location.hash = '#/movimenti'; });
     const hc = $('#home-chart', root);
