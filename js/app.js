@@ -1,7 +1,7 @@
 /* app.js - Soldi. Router, viste, dialog. */
 'use strict';
 
-const APP_VERSION = 'v51';
+const APP_VERSION = 'v52';
 
 /* ---------- helpers ---------- */
 const EUR = new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' });
@@ -15,6 +15,10 @@ function setPrivacy(on) {
   privacyOn = on;
   if (on) localStorage.setItem(PRIVACY_KEY, '1'); else localStorage.removeItem(PRIVACY_KEY);
 }
+
+// Client ID del progetto Google "soldi": non e' un segreto (sta nel sorgente di
+// qualsiasi app web), serve solo a dire a Google quale app chiede il permesso.
+const GOOGLE_CLIENT_ID = '956096436311-j52o8b7opd33ll09mg5r2kujip13haug.apps.googleusercontent.com';
 
 const fmt = c => (privacyOn ? '••••' : EUR.format(c / 100));
 const fmtS = c => (privacyOn ? '••••' : (c > 0 ? '+' : c < 0 ? '-' : '') + EUR.format(Math.abs(c) / 100));
@@ -213,7 +217,9 @@ function render() {
     const isCur = a.dataset.nav === UI.route;
     if (isCur) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
   });
-  if (needsWelcome) { view.innerHTML = Views.welcome(); Views.bindWelcome(view); return; }
+  // il benvenuto copriva ogni rotta, impostazioni comprese: chi restava senza dati
+  // non poteva piu' arrivare alla sincronizzazione per riprenderseli
+  if (needsWelcome && UI.route !== 'impostazioni') { view.innerHTML = Views.welcome(); Views.bindWelcome(view); return; }
   CAT_SLOTS = catColorSlots();
   const v = Views[UI.route];
   view.innerHTML = v();
@@ -230,11 +236,12 @@ const Views = {
     return `<div class="welcome">
       <h2><span style="color:var(--brand)">€</span> Soldi</h2>
       <p>Spese, entrate e fatture del forfettario, tutto salvato <strong>solo su questo dispositivo</strong>.</p>
-      <button class="btn primary" id="w-import"><svg class="ic"><use href="#i-down"/></svg> Importa i movimenti dal foglio Google (1.036)</button>
+      <button class="btn primary" id="w-drive"><svg class="ic"><use href="#i-down"/></svg> Recupera i dati da Google Drive</button>
+      <button class="btn" id="w-import"><svg class="ic"><use href="#i-down"/></svg> Importa i movimenti dal foglio Google (1.036)</button>
       <button class="btn" id="w-file"><svg class="ic"><use href="#i-up"/></svg> Importa un backup (.soldi)</button>
       <button class="btn" id="w-empty">Parti da zero</button>
       <input type="file" id="w-fileinput" accept=".soldi" hidden>
-      <p class="mut" style="font-size:.8rem;margin-top:14px">Sul telefono? Esporta il backup cifrato dal PC, passalo via Drive e importalo qui: i dati non toccano mai un server.</p>
+      <p class="mut" style="font-size:.8rem;margin-top:14px">Se su un altro dispositivo la sincronizzazione è attiva, il primo pulsante è quello giusto: ti chiede la password di sync e riporta giù tutto. Gli altri due partono da zero o da un file.</p>
     </div>`;
   },
   bindWelcome(root) {
@@ -242,6 +249,20 @@ const Views = {
     fetch('seed/seed-data.json', { method: 'HEAD' }).then(r => {
       if (!r.ok) $('#w-import', root)?.remove();
     }).catch(() => $('#w-import', root)?.remove());
+
+    /* Se il browser sfratta i dati (succede sui dispositivi dove l'app non e'
+       installata), da qui non si arrivava piu' a Drive: le tre scelte erano tutte
+       "riparti da qualcos'altro", e le impostazioni non si aprivano perche' il
+       benvenuto copre ogni rotta. Questo bottone e' la strada di ritorno. */
+    $('#w-drive', root).addEventListener('click', () => {
+      const run = pw => Sync.connect(GOOGLE_CLIENT_ID, pw)
+        .then(() => { toast('Dati recuperati da Drive ✓'); render(); })
+        .catch(e => {
+          if (e.message === 'WRONG_KEY' || e.message === 'NEED_PASSWORD') Dialogs.syncPassword(run, e.message === 'WRONG_KEY');
+          else { toast(e.message); render(); }
+        });
+      Dialogs.syncPassword(run, false);
+    });
     $('#w-import', root).addEventListener('click', async () => {
       const btn = $('#w-import', root);
       btn.disabled = true; btn.textContent = 'Importo…';
@@ -917,7 +938,7 @@ const Views = {
         </div>` : `
         <div class="s-desc">Collega il tuo Google Drive: le modifiche fatte dal telefono compaiono anche sul PC (e viceversa) in automatico. Su Drive viaggia solo un file cifrato con una password che scegli tu. Serve un Client ID Google gratuito (chiedi a Claude la guida, ~10 minuti una tantum).</div>
         <div class="frow">
-          <input type="text" id="sy-cid" placeholder="Client ID Google (…apps.googleusercontent.com)" value="${esc(s.sync?.clientId || '956096436311-j52o8b7opd33ll09mg5r2kujip13haug.apps.googleusercontent.com')}" autocomplete="off">
+          <input type="text" id="sy-cid" placeholder="Client ID Google (…apps.googleusercontent.com)" value="${esc(s.sync?.clientId || GOOGLE_CLIENT_ID)}" autocomplete="off">
           <button class="btn primary" id="sy-on" style="flex:0 0 auto">Collega</button>
         </div>`}
       </div>
