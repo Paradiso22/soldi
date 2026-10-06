@@ -1,7 +1,7 @@
 /* app.js - Soldi. Router, viste, dialog. */
 'use strict';
 
-const APP_VERSION = 'v52';
+const APP_VERSION = 'v53';
 
 /* ---------- helpers ---------- */
 const EUR = new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' });
@@ -158,6 +158,7 @@ const UI = {
   stat: { scope: 'month', anchor: todayISO(), custom: null, flow: 'out', table: false },
   home: { scope: 'month', anchor: todayISO(), custom: null },
   homeFlow: 'out',
+  futuriAperti: false, // tendina dei movimenti futuri: chiusa a ogni apertura dell'app
   lastAdded: null,
 };
 
@@ -226,6 +227,18 @@ function render() {
   const bind = Views['bind' + UI.route[0].toUpperCase() + UI.route.slice(1)];
   if (bind) bind(view);
   UI.lastAdded = null;
+}
+
+/* Tendina dei movimenti futuri (come in Batti): all'apertura si vede l'oggi,
+   quello che deve ancora succedere sta qui sotto e si apre con un tocco. */
+function tendinaFuturi(n, inner) {
+  return `<details class="futuri" ${UI.futuriAperti ? 'open' : ''}>
+    <summary><span>In arrivo · ${n} moviment${n === 1 ? 'o' : 'i'}</span><svg class="ic chev" aria-hidden="true"><use href="#i-down"/></svg></summary>
+    ${inner}
+  </details>`;
+}
+function bindTendinaFuturi(root) {
+  $$('details.futuri', root).forEach(d => d.addEventListener('toggle', () => { UI.futuriAperti = d.open; }));
 }
 
 /* ---------- viste ---------- */
@@ -322,7 +335,9 @@ const Views = {
     const saldoF24 = bal.get(contoTasse()) || 0;
     const today = todayISO();
     const recent = DB.state.tx.filter(t => t.date <= today).slice(0, matchMedia('(min-width: 920px)').matches ? 11 : 6);
-    const upcoming = DB.state.tx.filter(t => t.date > today).sort((a, b) => a.date.localeCompare(b.date)).slice(0, 5);
+    const futuriTutti = DB.state.tx.filter(t => t.date > today);
+    const nArrivo = futuriTutti.length;
+    const upcoming = futuriTutti.sort((a, b) => a.date.localeCompare(b.date)).slice(0, 5);
     const noCat = DB.state.tx.filter(t => !t.category && t.type !== 'transfer').length;
 
     return `<div class="home-grid"><div class="colA">
@@ -407,9 +422,7 @@ const Views = {
       </form>
       </div><div class="colB">
 
-      ${upcoming.length ? `
-      <h3 class="rule">In arrivo</h3>
-      <ul class="txlist">${upcoming.map(t => Views.txRow(t)).join('')}</ul>` : ''}
+      ${upcoming.length ? tendinaFuturi(nArrivo, `<ul class="txlist">${upcoming.map(t => Views.txRow(t)).join('')}</ul>`) : ''}
 
       <h3 class="rule">Ultimi movimenti</h3>
       <ul class="txlist">${recent.length ? recent.map(t => Views.txRow(t)).join('') : `
@@ -420,6 +433,7 @@ const Views = {
       </div></div>`;
   },
   bindHome(root) {
+    bindTendinaFuturi(root);
     $('#h-prev', root).addEventListener('click', () => { UI.home.anchor = shiftAnchor(UI.home.scope, UI.home.anchor, -1); render(); });
     $('#h-next', root).addEventListener('click', () => { UI.home.anchor = shiftAnchor(UI.home.scope, UI.home.anchor, 1); render(); });
     $$('[data-hscope]', root).forEach(b => b.addEventListener('click', () => {
@@ -551,10 +565,24 @@ const Views = {
     const groups = [];
     let cur = null;
     for (const t of list) {
+      if (t.date > today) continue; // i futuri vanno nella tendina
       const key = t.dayUnknown ? t.date.slice(0, 7) + '-??' : t.date;
       if (!cur || cur.key !== key) { cur = { key, date: t.date, dayUnknown: t.dayUnknown, items: [] }; groups.push(cur); }
       cur.items.push(t);
     }
+
+    // i futuri dal piu' vicino al piu' lontano: e' l'ordine in cui arrivano
+    const gruppiFuturi = [];
+    let cf = null;
+    for (const t of list.filter(x => x.date > today).sort((a, b) => a.date.localeCompare(b.date))) {
+      if (!cf || cf.key !== t.date) { cf = { key: t.date, date: t.date, items: [] }; gruppiFuturi.push(cf); }
+      cf.items.push(t);
+    }
+    const daygroup = g => `
+          <li class="daygroup">
+            <div class="dayhead">${g.dayUnknown ? 'Giorno non noto · ' + fmtDate(g.date, true) : fmtDate(g.date, false)}</div>
+            <ul class="txlist">${g.items.map(t => Views.txRow(t, { noDate: true })).join('')}</ul>
+          </li>`;
 
     const hasNav = ['day', 'week', 'month', 'year'].includes(f.scope);
 
@@ -590,16 +618,14 @@ const Views = {
         </select>
       </div>
 
+      ${nFuturi ? tendinaFuturi(nFuturi, `<ul class="txlist">${gruppiFuturi.map(daygroup).join('')}</ul>`) : ''}
       <ul class="txlist">
-        ${groups.length ? groups.map(g => `
-          <li class="daygroup">
-            <div class="dayhead">${g.dayUnknown ? 'Giorno non noto · ' + fmtDate(g.date, true) : fmtDate(g.date, false)}</div>
-            <ul class="txlist">${g.items.map(t => Views.txRow(t, { noDate: true })).join('')}</ul>
-          </li>`).join('')
-        : `<li class="empty"><svg class="ic"><use href="#i-board"/></svg><div class="e-marker">Niente qui</div>Nessun movimento con questi filtri.</li>`}
+        ${groups.length ? groups.map(daygroup).join('')
+        : nFuturi ? '' : `<li class="empty"><svg class="ic"><use href="#i-board"/></svg><div class="e-marker">Niente qui</div>Nessun movimento con questi filtri.</li>`}
       </ul>`;
   },
   bindMovimenti(root) {
+    bindTendinaFuturi(root);
     const f = UI.mov;
     $('#m-prev', root).addEventListener('click', () => { f.anchor = shiftAnchor(f.scope, f.anchor, -1); render(); });
     $('#m-next', root).addEventListener('click', () => { f.anchor = shiftAnchor(f.scope, f.anchor, 1); render(); });
